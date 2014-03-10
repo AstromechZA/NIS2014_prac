@@ -26,14 +26,18 @@ class Client(object):
     def sign_message(self, message):
         return base64.b64encode(self.signer.sign(SHA.new(message)))
 
+    def encrypt_message(self, key, message):
+        return base64.b64encode(key.encrypt(message, 1)[0])
+
     def upload_to_server(self, id, details):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.connect((self.cfg['server'], self.cfg['port']))
 
         client_id = self.cfg['id']
         signed = self.sign_message(client_id)
+        ciphertext = self.encrypt_message(self.server_key, details)
 
-        s.send("%s|%s" % (client_id, signed))
+        s.send("%s|%s|%s" % (client_id, signed, ciphertext))
 
 
 if __name__ == '__main__':
