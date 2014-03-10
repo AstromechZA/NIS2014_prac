@@ -9,15 +9,17 @@ class SockServer(object):
     def __init__(self, port):
         super(SockServer, self).__init__()
         self.port = port
-        self.__bind_socket()
-        self.__listen()
+        self.socket = self.__bind_socket()
 
     def start(self):
-        self.__listen()
+        while True:
+            self.__listen()
+        self.socket.close()
 
     def __bind_socket(self):
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.socket.bind(('', self.port))
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.bind(('', self.port))
+        return s
 
     def __listen(self):
         self.socket.listen(1)
