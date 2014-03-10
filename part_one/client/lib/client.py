@@ -2,33 +2,40 @@ import socket
 import json
 import os
 import base64
+from key_things import load_key_from_file
 from Crypto.PublicKey import RSA
 from Crypto.Hash import SHA
 from Crypto.Signature import PKCS1_v1_5
 
-def load_config():
-    """ Load config object from client configuration file """
-    path = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', 'client.cfg')
-    with open(path) as f:
-        return json.loads(f.read())
+class Client(object):
+    """ docstring for Client """
 
-def load_key_from_file(path):
-    """ Create key from file """
-    p = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', path)
-    with open(os.path.abspath(p)) as f:
-        return RSA.importKey(f.read())
+    def __init__(self):
+        super(Client, self).__init__()
+        self.cfg = self.load_config()
+        self.my_key = load_key_from_file('keyring/self.pem')
+        self.signer = PKCS1_v1_5.new(self.my_key)
+        self.server_key = load_key_from_file('keyring/server.pub')
 
-cfg = load_config()
+    def load_config(self):
+        """ Load config object from client configuration file """
+        path = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', 'client.cfg')
+        with open(path) as f:
+            return json.loads(f.read())
 
-server_key = load_key_from_file('keyring/server.pub')
-my_key = load_key_from_file('keyring/self.pem')
+    def sign_message(self, message):
+        return base64.b64encode(self.signer.sign(SHA.new(message)))
 
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.connect((cfg['server'], cfg['port']))
+    def upload_to_server(self, id, details):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.connect((self.cfg['server'], self.cfg['port']))
 
-client_id = cfg['id']
-hash_of_id = SHA.new(client_id)
-signer = PKCS1_v1_5.new(my_key)
-signed = base64.b64encode(signer.sign(hash_of_id))
+        client_id = self.cfg['id']
+        signed = self.sign_message(client_id)
 
-s.send("%s|%s" % (client_id, signed))
+        s.send("%s|%s" % (client_id, signed))
+
+
+if __name__ == '__main__':
+    c = Client()
+    c.upload_to_server(7, 'Some random details, stuff stuff')
