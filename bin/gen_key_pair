@@ -1,0 +1,13 @@
+#!/usr/bin/python
+
+from Crypto.PublicKey import RSA
+from Crypto import Random
+random_generator = Random.new().read
+key = RSA.generate(1024, random_generator)
+print 'Public Key'
+print ''
+print key.publickey().exportKey().encode('string-escape')
+print ''
+print 'Private Key'
+print ''
+print key.exportKey().encode('string-escape')

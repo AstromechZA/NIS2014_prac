@@ -4,8 +4,7 @@ import os
 
 def load_config():
     """ Load config object from client configuration file """
-    path = os.path.join(os.path.dirname(os.path.realpath(__file__)),
-                        '..', 'client.cfg')
+    path = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', 'client.cfg')
     with open(path) as f:
         return json.loads(f.read())
 

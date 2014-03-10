@@ -12,3 +12,5 @@ class ConnectionHandler(object):
 
     def process(self):
         logger.info('Processing')
+        data = self.conn.recv(1024)
+        print data
