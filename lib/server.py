@@ -1,6 +1,7 @@
 import json
 import os
 import logging
+
 from sock_server import SockServer
 
 logger = logging.getLogger('nisprac')
@@ -24,7 +25,7 @@ def main():
 
     logger.debug("Starting server with config : %s" % str(cfg))
 
-    svr = SockServer(cfg['listenPort'])
+    svr = SockServer(cfg['listenPort'], cfg)
     svr.start()
 
 if __name__ == '__main__':

@@ -1,15 +1,19 @@
 import socket
 import logging
+import thread
+
+from connection_handler import ConnectionHandler
 
 logger = logging.getLogger('nisprac.socksvr')
 
 class SockServer(object):
     """ A Server for the listen server """
 
-    def __init__(self, port):
+    def __init__(self, port, cfg):
         super(SockServer, self).__init__()
         self.port = port
         self.socket = self.__bind_socket()
+        self.cfg = cfg
 
     def start(self):
         self.__listen()
@@ -29,9 +33,6 @@ class SockServer(object):
     def __accept(self):
         (conn, addr) = self.socket.accept()
         logger.info("Got connection from %s:%i" % (addr[0], addr[1]))
-        # todo
-        logger.info("Finished")
 
-
-
-
+        ch = ConnectionHandler(conn, self.cfg)
+        thread.start_new_thread(ch.process, ())
