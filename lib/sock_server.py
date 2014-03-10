@@ -12,8 +12,9 @@ class SockServer(object):
         self.socket = self.__bind_socket()
 
     def start(self):
+        self.__listen()
         while True:
-            self.__listen()
+            self.__accept()
         self.socket.close()
 
     def __bind_socket(self):
@@ -22,8 +23,10 @@ class SockServer(object):
         return s
 
     def __listen(self):
-        self.socket.listen(1)
+        self.socket.listen(4)
         logger.info("Listening on port %s" % self.port)
+
+    def __accept(self):
         (conn, addr) = self.socket.accept()
         logger.info("Got connection from %s:%i" % (addr[0], addr[1]))
         # todo
