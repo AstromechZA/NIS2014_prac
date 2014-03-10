@@ -1,5 +1,14 @@
 import json
 import os
+import logging
+
+logger = logging.getLogger('nisprac')
+logger.setLevel(logging.DEBUG)
+ch = logging.StreamHandler()
+ch.setLevel(logging.DEBUG)
+fm = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+ch.setFormatter(fm)
+logger.addHandler(ch)
 
 def load_config():
     """ Load config object from server configuration file """
@@ -12,7 +21,11 @@ def load_config():
 def main():
     """ Main method. Called at bottom of file. """
     cfg = load_config()
-    print cfg
+
+    logger.debug("Starting server with config : %s" % str(cfg))
+
+    svr = SockServer(cfg['listenPort'])
+    svr.start()
 
 if __name__ == '__main__':
     main()
