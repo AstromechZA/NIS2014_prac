@@ -6,8 +6,8 @@ random_generator = Random.new().read
 key = RSA.generate(1024, random_generator)
 print 'Public Key'
 print ''
-print key.publickey().exportKey().encode('string-escape')
+print key.publickey().exportKey()
 print ''
 print 'Private Key'
 print ''
-print key.exportKey().encode('string-escape')
+print key.exportKey()
