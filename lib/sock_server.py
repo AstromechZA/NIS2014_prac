@@ -26,6 +26,8 @@ class SockServer(object):
         logger.info("Listening on port %s" % self.port)
         (conn, addr) = self.socket.accept()
         logger.info("Got connection from %s:%i" % (addr[0], addr[1]))
+        # todo
+        logger.info("Finished")
 
 
 
