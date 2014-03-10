@@ -2,7 +2,7 @@ import json
 import os
 
 def load_config():
-    ''' Load config object from server configuration file '''
+    """ Load config object from server configuration file """
     path = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                         '..', 'server.cfg')
 
@@ -10,7 +10,7 @@ def load_config():
         return json.loads(f.read())
 
 def main():
-    ''' Main method. Called at bottom of file. '''
+    """ Main method. Called at bottom of file. """
     cfg = load_config()
     print cfg
 
