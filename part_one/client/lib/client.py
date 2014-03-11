@@ -28,8 +28,14 @@ class Client(object):
     def sign_message(self, message):
         return base64.b64encode(self.signer.sign(SHA.new(message)))
 
+    def verify_message(self, message, signed_text, sender_key):
+        return PKCS1_v1_5.new(sender_key).verify(SHA.new(message), base64.b64decode(signed_text))
+
     def encrypt_message(self, key, message):
-        return base64.b64encode(key.encrypt(message, 1)[0])
+        return base64.b64encode(key.encrypt(str(message), 32)[0])
+
+    def decrypt_message(self, key, message):
+        return key.decrypt(base64.b64decode(message))
 
     def make_nonce(self):
         return random.randint(0, sys.maxint-1)
@@ -39,11 +45,32 @@ class Client(object):
         s.connect((self.cfg['server'], self.cfg['port']))
 
         client_id = self.cfg['id']
-        nonce = self.make_nonce()
-        signed = self.sign_message(client_id)
-        ciphertext = self.encrypt_message(self.server_key, details)
 
-        s.send("%s|%s|%s|%s" % (client_id, nonce, signed, ciphertext))
+
+        # ======== message one - identify self =========
+        # nonce
+        nonce = self.make_nonce()
+        # payload
+        payload = json.dumps({'id': client_id, 'nonce': nonce})
+        # encrypt payload
+        securepayload = self.encrypt_message(self.server_key, payload)
+        # signature
+        signature = self.sign_message(securepayload)
+        # final
+        request = json.dumps({'payload': securepayload, 'signature': signature})
+        # send
+        s.send(request)
+
+
+        data = s.recv(4096)
+        print ("Received message of %i bytes" % len(data))
+        r = json.loads(data)
+        # check that signature matches payload
+        check = self.verify_message(r['payload'], r['signature'], self.server_key)
+        print check
+        # decrypt payload
+        payload = self.decrypt_message(self.my_key, r['payload'])
+        print json.loads(payload)
 
 
 if __name__ == '__main__':
