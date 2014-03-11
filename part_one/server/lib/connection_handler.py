@@ -36,12 +36,20 @@ class ConnectionHandler(object):
         print self.verify_message(c_id, parts[2], c_key)
         print self.my_key.decrypt(base64.b64decode(parts[3]))
 
-        return (c_id, c_key, c_nonce)
+        c = {}
+        c['id'] = c_id
+        c['key'] = c_key
+        c['nonce'] = c_nonce
+        return c
 
     def process(self):
         logger.info('Processing')
+        try:
+            client = self.wait_for_handshake_one()
+        except Exception, e:
+            print e
+        finally:
+            logger.info('Closing connection')
+            self.conn.shutdown(socket.SHUT_RDWR)
+            self.conn.close()
 
-        c_id, c_key, c_nonce = self.wait_for_handshake_one()
-
-        self.conn.shutdown(socket.SHUT_RDWR)
-        self.conn.close()
