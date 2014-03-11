@@ -26,8 +26,8 @@ class ConnectionHandler(object):
     def verify_message(self, message, signed_text, sender_key):
         return PKCS1_v1_5.new(sender_key).verify(SHA.new(message), base64.b64decode(signed_text))
 
-    def process(self):
-        logger.info('Processing')
+
+    def wait_for_handshake_one(self):
         data = self.conn.recv(4096)
         parts = data.split('|')
         c_id = parts[0]
@@ -35,5 +35,13 @@ class ConnectionHandler(object):
         c_nonce = int(parts[1])
         print self.verify_message(c_id, parts[2], c_key)
         print self.my_key.decrypt(base64.b64decode(parts[3]))
+
+        return (c_id, c_key, c_nonce)
+
+    def process(self):
+        logger.info('Processing')
+
+        c_id, c_key, c_nonce = self.wait_for_handshake_one()
+
         self.conn.shutdown(socket.SHUT_RDWR)
         self.conn.close()
