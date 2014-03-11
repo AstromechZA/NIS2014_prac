@@ -17,8 +17,12 @@ class SockServer(object):
 
     def start(self):
         self.__listen()
-        while True:
-            self.__accept()
+        try:
+            while True:
+                self.__accept()
+        except KeyboardInterrupt:
+            print 'Shutting down.'
+        self.socket.shutdown(socket.SHUT_RDWR)
         self.socket.close()
 
     def __bind_socket(self):

@@ -1,5 +1,6 @@
 import logging
 import base64
+import socket
 
 from Crypto.PublicKey import RSA
 from Crypto.Hash import SHA
@@ -29,7 +30,10 @@ class ConnectionHandler(object):
         logger.info('Processing')
         data = self.conn.recv(4096)
         parts = data.split('|')
-        cid = parts[0]
-        c_key = load_key_from_file("keyring/%s.pub" % cid)
-        print self.verify_message(cid, parts[1], c_key)
-        print self.my_key.decrypt(base64.b64decode(parts[2]))
+        c_id = parts[0]
+        c_key = load_key_from_file("keyring/%s.pub" % c_id)
+        c_nonce = int(parts[1])
+        print self.verify_message(c_id, parts[2], c_key)
+        print self.my_key.decrypt(base64.b64decode(parts[3]))
+        self.conn.shutdown(socket.SHUT_RDWR)
+        self.conn.close()
