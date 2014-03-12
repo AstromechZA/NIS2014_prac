@@ -8,6 +8,7 @@ from Crypto.Random import random
 from Crypto.PublicKey import RSA
 from Crypto.Hash import SHA
 from Crypto.Signature import PKCS1_v1_5
+from Crypto.Cipher import PKCS1_OAEP
 
 from key_things import load_key_from_file
 
@@ -27,10 +28,12 @@ class ConnectionHandler(object):
         return base64.b64encode(self.signer.sign(SHA.new(message)))
 
     def encrypt_message(self, key, message):
-        return base64.b64encode(key.encrypt(str(message), 32)[0])
+        k = PKCS1_OAEP.new(key)
+        return base64.b64encode(k.encrypt(str(message)))
 
     def decrypt_message(self, key, message):
-        return key.decrypt(base64.b64decode(message))
+        k = PKCS1_OAEP.new(key)
+        return k.decrypt(base64.b64decode(message))
 
     def verify_message(self, message, signed_text, sender_key):
         return PKCS1_v1_5.new(sender_key).verify(SHA.new(message), base64.b64decode(signed_text))
