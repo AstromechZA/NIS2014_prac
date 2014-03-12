@@ -4,6 +4,7 @@ import socket
 import json
 import sys
 from Crypto.Random import random
+from Crypto import Random
 
 from Crypto.PublicKey import RSA
 from Crypto.Hash import SHA
@@ -62,7 +63,6 @@ class ConnectionHandler(object):
             raise Exception("Signature does not match payload apparently from client %s" % c_id)
 
         logger.debug("Signature matches payload. Was signed by clients private key")
-        logger.debug(payload)
 
         c = {}
         c['id'] = c_id
@@ -76,7 +76,7 @@ class ConnectionHandler(object):
         # increment client nonce
         c_nonce = client['nonce'] + 1
         # create secret key
-        s_key = str(random.getrandbits(256))
+        s_key = base64.b64encode(Random.new().read(32))
         # construct payload
         payload = json.dumps({'nonce': nonce, 'c_nonce': c_nonce, 's_key': s_key})
         # encrypt payload

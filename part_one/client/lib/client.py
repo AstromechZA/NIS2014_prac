@@ -4,11 +4,13 @@ import os
 import sys
 import base64
 from key_things import load_key_from_file
-import random
+from Crypto import Random
+from Crypto.Random import random
 from Crypto.PublicKey import RSA
 from Crypto.Hash import SHA
 from Crypto.Signature import PKCS1_v1_5
 from Crypto.Cipher import PKCS1_OAEP
+from Crypto.Cipher import AES
 
 class Client(object):
     """ docstring for Client """
@@ -81,7 +83,34 @@ class Client(object):
         if not check:
             raise Exception("Nonce reply failure %s != %s" % (nonce+1, payload['c_nonce']))
 
-        print payload
+
+        # payload
+        payload2 = json.dumps({'s_nonce': payload['nonce']+1})
+        # encrypt payload
+        securepayload = self.encrypt_message(self.server_key, payload2)
+        # signature
+        signature = self.sign_message(securepayload)
+        # operation
+        operation = json.dumps({'op':'none'})
+        # pad operation with spaces as its JSON ;)
+        operation += ((16 - len(operation) % 16) * ' ')
+        # encrypt operation
+
+        session_key = base64.b64decode(payload['s_key'])
+        iv = Random.new().read( AES.block_size )
+        cipher = AES.new( session_key, AES.MODE_CBC, iv )
+        secureop = base64.b64encode( iv + cipher.encrypt( operation ) )
+        # final
+        request = json.dumps({'payload': securepayload, 'signature': signature, 'operation': secureop})
+        # send
+        #s.send(request)
+
+        print request
+
+
+
+
+
 
 
 if __name__ == '__main__':
