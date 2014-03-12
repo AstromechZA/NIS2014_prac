@@ -41,7 +41,7 @@ class Client(object):
         return k.decrypt(base64.b64decode(message))
 
     def make_nonce(self):
-        return random.randint(0, sys.maxint-1)
+        return random.getrandbits(31)
 
     def upload_to_server(self, id, details):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -66,14 +66,22 @@ class Client(object):
 
 
         data = s.recv(4096)
-        print ("Received message of %i bytes" % len(data))
         r = json.loads(data)
         # check that signature matches payload
         check = self.verify_message(r['payload'], r['signature'], self.server_key)
-        print check
+
+        if not check:
+            raise Exception("Signature does not match payload apparently from client %s" % c_id)
+
         # decrypt payload
-        payload = self.decrypt_message(self.my_key, r['payload'])
-        print json.loads(payload)
+        payload = json.loads(self.decrypt_message(self.my_key, r['payload']))
+        # check nonce
+        check = nonce + 1 == payload['c_nonce']
+
+        if not check:
+            raise Exception("Nonce reply failure %s != %s" % (nonce+1, payload['c_nonce']))
+
+        print payload
 
 
 if __name__ == '__main__':

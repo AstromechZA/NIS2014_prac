@@ -39,7 +39,7 @@ class ConnectionHandler(object):
         return PKCS1_v1_5.new(sender_key).verify(SHA.new(message), base64.b64decode(signed_text))
 
     def make_nonce(self):
-        return random.randint(0, sys.maxint-1)
+        return random.getrandbits(31)
 
 
     def wait_for_identify(self):
@@ -80,7 +80,6 @@ class ConnectionHandler(object):
         # construct payload
         payload = json.dumps({'nonce': nonce, 'c_nonce': c_nonce, 's_key': s_key})
         # encrypt payload
-        logger.debug("sending %s" % payload)
         securepayload = self.encrypt_message(client['key'], payload)
         # signature
         signature = self.sign_message(securepayload)
