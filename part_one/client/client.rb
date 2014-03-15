@@ -5,51 +5,74 @@ require 'json'
 require 'base64'
 
 class Client
-    def initialize(id, keyring)
-        @id = id
-        @keyring = keyring
-        @key = load_key 'self.pem'
-    end
+  def initialize(id, keyring)
+    @id = id
+    @keyring = keyring
+    @key = load_key 'self.pem'
+    @server_key = load_key 'server.pem'
+  end
 
-    def load_key(file)
-        OpenSSL::PKey::RSA.new File.read File.join @keyring, file
-    end
+  def load_key(file)
+    OpenSSL::PKey::RSA.new(File.read(File.join(@keyring, file)))
+  end
 
-    def upload(id, details, remote, port)
-        s = TCPSocket.new remote, port
+  def upload(id, details, remote, port)
+    s = TCPSocket.new(remote, port)
+    n = send_handshake(s)
+    sn, k, iv = receive_affirmation(s, n)
+    send_confirmation_and_command(s, sn, k, iv, id, details)
 
-        n = start_handshake s
+    s.close
+  end
 
-        s.close
-    end
+  def send_handshake(socket)
+    n = Random.rand(2**31)
+    payload = JSON.dump({id: @id, nonce: n})
+    secure_payload = Base64.encode64(@server_key.public_encrypt(payload))
+    signature = Base64.encode64(@key.private_encrypt(OpenSSL::Digest::SHA1.digest(payload)))
+    socket.puts(JSON.dump({payload: secure_payload, signature: signature}))
 
-    def start_handshake(socket)
-        n = Random.rand 2**31
+    return n
+  end
 
-        payload = JSON.dump({id: @id, nonce: n})
+  def receive_affirmation(socket, nonce)
+    data = JSON.load(socket.gets)
+    payload = JSON.load(@key.private_decrypt(Base64.decode64(data['payload'])))
+    valid = OpenSSL::Digest::SHA1.digest(JSON.dump(payload)) == @server_key.public_decrypt(Base64.decode64(data['signature']))
+    raise 'signature error' if not valid
 
-        svr_k = load_key 'server.pub'
+    valid = (nonce + 1) == payload['cnonce']
+    raise 'nonce error' if not valid
 
-        secure_payload = Base64.encode64 svr_k.public_encrypt payload
+    return payload['nonce'], Base64.decode64(payload['sessionkey']), Base64.decode64(payload['iv'])
+  end
 
-        signature = Base64.encode64 @key.private_encrypt OpenSSL::Digest::SHA1.digest payload
+  def send_confirmation_and_command(socket, nonce, sessionkey, iv, id, details)
+    payload = JSON.dump({snonce: nonce+1})
+    secure_payload = Base64.encode64(@server_key.public_encrypt(payload))
+    signature = Base64.encode64(@key.private_encrypt(OpenSSL::Digest::SHA1.digest(payload)))
 
-        r = JSON.dump({payload: secure_payload, signature: signature})
+    command = JSON.dump({id: id, details: details})
 
-        socket.puts r
+    cipher = OpenSSL::Cipher::AES256.new(:CBC)
+    cipher.encrypt
+    cipher.key = sessionkey
+    cipher.iv = iv
 
-        return n
-    end
+    secure_command = Base64.encode64(cipher.update(command) + cipher.final)
+
+    socket.puts(JSON.dump({payload: secure_payload, signature: signature, command: secure_command}))
+  end
 
 end
 
-current_dir = File.dirname __FILE__
+current_dir = File.dirname(__FILE__)
 
-cnf = YAML::load_file File.join current_dir, 'client.yml'
+cnf = YAML::load_file(File.join(current_dir, 'client.yml'))
 puts cnf
 
-c = Client.new cnf['id'], File.join(current_dir, 'keyring')
-c.upload '007', 'Some details', cnf['server'], cnf['port']
+c = Client.new(cnf['id'], File.join(current_dir, 'keyring'))
+c.upload('007', 'Some details', cnf['server'], cnf['port'])
 
 
 
