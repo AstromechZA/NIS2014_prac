@@ -21,7 +21,7 @@ class Client
     n = send_handshake(s)
     sn, k, iv = receive_affirmation(s, n)
     send_confirmation_and_command(s, sn, k, iv, id, details)
-
+    receiver_response(s, k, iv)
     s.close
   end
 
@@ -62,6 +62,20 @@ class Client
     secure_command = Base64.encode64(cipher.update(command) + cipher.final)
 
     socket.puts(JSON.dump({payload: secure_payload, signature: signature, command: secure_command}))
+  end
+
+  def receiver_response(socket, key, iv)
+    data = Base64.decode64(socket.gets)
+
+    cipher = OpenSSL::Cipher::AES256.new(:CBC)
+    cipher.decrypt
+    cipher.key = key
+    cipher.iv = iv
+
+    r = JSON.load(cipher.update(data) + cipher.final)
+
+    puts r
+
   end
 
 end

@@ -78,6 +78,14 @@ class Server
     command = JSON.load(command)
     puts command
 
+    cipher.encrypt
+    cipher.key = key
+    cipher.iv = iv
+
+    response = JSON.dump({response: 'ok'})
+    secure_response = Base64.encode64(cipher.update(response) + cipher.final)
+
+    socket.puts(secure_response)
   end
 
 
