@@ -26,13 +26,15 @@ class Client
     def start_handshake(socket)
         n = Random.rand 2**31
 
-        payload = JSON.dump {id: @id, nonce: n}
+        payload = JSON.dump({id: @id, nonce: n})
 
-        secure_payload = Base64.encode64 @key.private_encrypt payload
+        svr_k = load_key 'server.pub'
+
+        secure_payload = Base64.encode64 svr_k.public_encrypt payload
 
         signature = Base64.encode64 @key.private_encrypt OpenSSL::Digest::SHA1.digest payload
 
-        r = JSON.dump {payload: secure_payload, signature: signature}
+        r = JSON.dump({payload: secure_payload, signature: signature})
 
         socket.puts r
 
