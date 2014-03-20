@@ -29,17 +29,13 @@ class Client
     $log.info "Connecting to #{remote}:#{port}"
     @socket = TCPSocket.new(remote, port)
 
-    $log.debug 'Sending handshake'
     send_handshake(@socket)
 
-    $log.debug 'Waiting for affirmation'
     receive_affirmation(@socket)
 
-    $log.debug 'Sending confirmation'
     send_confirmation(@socket)
 
-    $log.debug 'Waiting for ready'
-    receive_ready(@socket)
+    receive_responce(@socket)
   end
 
   def close
@@ -52,7 +48,7 @@ class Client
   # handshake message
   # Identifies the client to the server
   def send_handshake(socket)
-    # create nonce
+    $log.debug 'Sending handshake'
     @last_cnonce = Random.rand(2**31)
     # construct payload with signed version
     payload = CryptoUtils::makeRSApayload({id: @id, cnonce: @last_cnonce}, @key, @server_key)
@@ -63,7 +59,7 @@ class Client
   # affirmation message
   # Server sends back incremented client nonce, server nonce, and a master key+iv
   def receive_affirmation(socket)
-    # get message
+    $log.debug 'Waiting for affirmation'
     data = JSON.load(socket.gets)
     # verify signature
     payload = CryptoUtils::checkRSApayloadSignature(data, @key, @server_key)
@@ -80,6 +76,7 @@ class Client
 
   # confirmation
   def send_confirmation(socket)
+    $log.debug 'Sending confirmation'
     @last_cnonce = Random.rand(2**31)
 
     payload = CryptoUtils::makeRSApayload({snonce: @last_snonce+1, cnonce: @last_cnonce}, @key, @server_key)
@@ -91,7 +88,8 @@ class Client
     socket.puts(JSON.dump(payload))
   end
 
-  def receive_ready(socket)
+  def receive_responce(socket)
+    $log.debug 'Waiting for responce'
     data = Base64.decode64(socket.gets)
 
     plaintext = CryptoUtils::decryptAES(data, @sessionkey, @sessioniv)
@@ -110,6 +108,7 @@ class Client
   end
 
   def send_command(socket, command)
+    $log.debug "Sending command: #{command}"
     @last_cnonce = Random.rand(2**31)
 
     payload = CryptoUtils::makeRSApayload({snonce: @last_snonce+1, cnonce: @last_cnonce}, @key, @server_key)
@@ -126,13 +125,13 @@ class Client
 
   def set(id, text)
     send_command(@socket, {action: 'set', id: id, text: text})
-    p = receive_ready(@socket)
+    p = receive_responce(@socket)
     return p['response'] == 0
   end
 
   def get(id)
     send_command(@socket, {action: 'get', id: id})
-    p = receive_ready(@socket)
+    p = receive_responce(@socket)
     if not p['response'] == 0
       return p
     else
