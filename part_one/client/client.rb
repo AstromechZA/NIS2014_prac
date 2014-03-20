@@ -103,6 +103,9 @@ class Client
 
     @last_snonce = payload['snonce']
 
+    payload.delete('cnonce')
+    payload.delete('snonce')
+
     return payload
   end
 
@@ -149,9 +152,9 @@ $log.level = Logger.const_get(cnf['log_level']) if cnf.has_key? 'log_level'
 c = Client.new(cnf['id'], File.join(current_dir, 'keyring'))
 c.authenticate(cnf['server'], cnf['port'])
 
-c.set('007', 'Bond,James,High Priority')
+puts c.set('007', 'Bond,James,High Priority')
 
-c.get('007')
+puts c.get('007')
 
 c.close()
 

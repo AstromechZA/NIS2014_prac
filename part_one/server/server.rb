@@ -47,12 +47,14 @@ class Server
           send_ready(socket, client)
 
           while true
-            r = receive_command(socket, client)
-            if r['action'] == 'quit'
+            request = receive_command(socket, client)
+            if request['action'] == 'quit'
               break
             end
 
-            s = send_response(socket, client, r)
+            response = perform(request)
+
+            send_response(socket, client, response)
           end
 
           $log.info 'Closing socket'
