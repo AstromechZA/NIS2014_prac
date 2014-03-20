@@ -46,7 +46,14 @@ class Server
           $log.debug 'Sending Ready'
           send_ready(socket, client)
 
+          while true
+            r = receive_command(socket, client)
+            if r['action'] == 'quit'
+              break
+            end
 
+            s = send_response(socket, client, r)
+          end
 
           $log.info 'Closing socket'
         rescue Exception => e
@@ -123,6 +130,39 @@ class Server
 
     socket.puts(secure_response)
   end
+
+  def receive_command(socket, client)
+    data = JSON.load(socket.gets)
+
+    payload = CryptoUtils::checkRSApayloadSignature(data, @key, client[:key])
+
+    valid = (client[:snonce] + 1) == payload['snonce']
+    raise 'nonce error' if not valid
+
+    plaintext = CryptoUtils::decryptAES(Base64.decode64(data['command']), client[:sessionkey], client[:sessioniv])
+
+    client[:cnonce] = payload['cnonce']
+
+    return JSON.load(plaintext)
+  end
+
+  def send_response(socket, client, response)
+    client[:snonce] = Random.rand(2**31)
+
+    response[:cnonce] = client[:cnonce] + 1
+    response[:snonce] = client[:snonce]
+
+    response = JSON.dump(response)
+
+    ciphertext = CryptoUtils::encryptAES(response, client[:sessionkey], client[:sessioniv])
+
+    secure_response = Base64.strict_encode64(ciphertext)
+
+    socket.puts(secure_response)
+  end
+
+
+
 
   def set(id, document)
     f = File.join(@data_dir, id)

@@ -25,27 +25,29 @@ class Client
     @last_snonce = nil
   end
 
-  def perform(command, remote, port)
+  def authenticate(remote, port)
     $log.info "Connecting to #{remote}:#{port}"
-    socket = TCPSocket.new(remote, port)
+    @socket = TCPSocket.new(remote, port)
 
     $log.debug 'Sending handshake'
-    send_handshake(socket)
+    send_handshake(@socket)
 
     $log.debug 'Waiting for affirmation'
-    receive_affirmation(socket)
+    receive_affirmation(@socket)
 
     $log.debug 'Sending confirmation'
-    send_confirmation(socket)
+    send_confirmation(@socket)
 
     $log.debug 'Waiting for ready'
-    receive_ready(socket)
-
-    socket.close
-
-    $log.debug 'Closing socket'
-    $log.info 'Done'
+    receive_ready(@socket)
   end
+
+  def close
+    send_command(@socket, {action: 'quit'})
+    $log.debug 'Closing socket'
+    @socket.close
+  end
+
 
   # handshake message
   # Identifies the client to the server
@@ -96,14 +98,45 @@ class Client
 
     payload = JSON.load(plaintext)
 
-    if payload['response'] == 0
-      $log.info payload
-    else
-      $log.error "Server error '#{r['message']}'"
-    end
+    valid = (@last_cnonce + 1) == payload['cnonce']
+    raise 'nonce error' if not valid
 
+    @last_snonce = payload['snonce']
 
+    return payload
   end
+
+  def send_command(socket, command)
+    @last_cnonce = Random.rand(2**31)
+
+    payload = CryptoUtils::makeRSApayload({snonce: @last_snonce+1, cnonce: @last_cnonce}, @key, @server_key)
+
+    as_txt = command.to_s
+    as_txt = JSON.dump(command) if command.is_a?(Hash)
+
+    ciphertext = CryptoUtils::encryptAES(as_txt, @sessionkey, @sessioniv)
+
+    payload[:command] = Base64.strict_encode64(ciphertext)
+
+    socket.puts(JSON.dump(payload))
+  end
+
+  def set(id, text)
+    send_command(@socket, {action: 'set', id: id, text: text})
+    p = receive_ready(@socket)
+    return p['response'] == 0
+  end
+
+  def get(id)
+    send_command(@socket, {action: 'get', id: id})
+    p = receive_ready(@socket)
+    if not p['response'] == 0
+      return p
+    else
+      return nil
+    end
+  end
+
 
 end
 
@@ -114,16 +147,13 @@ $log.info "Starting client with #{cnf}"
 $log.level = Logger.const_get(cnf['log_level']) if cnf.has_key? 'log_level'
 
 c = Client.new(cnf['id'], File.join(current_dir, 'keyring'))
-c.perform(
-  {
-    action: 'get',
-    id: '007',
-    document: 'Bond,James,High Priority'
-  },
-  cnf['server'],
-  cnf['port']
-)
+c.authenticate(cnf['server'], cnf['port'])
 
+c.set('007', 'Bond,James,High Priority')
+
+c.get('007')
+
+c.close()
 
 
 
