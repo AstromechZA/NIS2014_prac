@@ -34,20 +34,19 @@ class Server
       Thread.start(server.accept) do |socket|
         $log.info "Accepted connection from #{socket.remote_address.ip_address}:#{socket.remote_address.ip_port}"
         begin
-          $log.debug 'Waiting for handshake'
           client = receive_handshake(socket)
 
-          $log.debug 'Sending affirmation'
           send_affirmation(socket, client)
 
-          $log.debug 'Waiting for confirmation and command'
           receive_confirmation(socket, client)
 
-          $log.debug 'Sending Ready'
           send_ready(socket, client)
 
           while true
             request = receive_command(socket, client)
+
+            $log.info "Received command: #{request['action']}"
+
             if request['action'] == 'quit'
               break
             end
@@ -57,7 +56,6 @@ class Server
             send_response(socket, client, response)
           end
 
-          $log.info 'Closing socket'
         rescue Exception => e
           $log.error "#{e.message}"
         end
@@ -68,6 +66,7 @@ class Server
   end
 
   def receive_handshake(socket)
+    $log.debug 'Waiting for handshake'
     data = JSON.load(socket.gets)
 
     payload = JSON.load(@key.private_decrypt(Base64.decode64(data['payload'])))
@@ -83,6 +82,7 @@ class Server
   end
 
   def send_affirmation(socket, client)
+    $log.debug 'Sending affirmation'
     client[:snonce] = Random.rand(2**31)
 
     k, iv = CryptoUtils::generateAESPair
@@ -105,6 +105,7 @@ class Server
   end
 
   def receive_confirmation(socket, client)
+    $log.debug 'Waiting for confirmation and command'
     data = JSON.load(socket.gets)
 
     payload = CryptoUtils::checkRSApayloadSignature(data, @key, client[:key])
@@ -122,6 +123,7 @@ class Server
   end
 
   def send_ready(socket, client)
+    $log.debug 'Sending Ready'
     client[:snonce] = Random.rand(2**31)
 
     response = JSON.dump({response: 0, message: 'ready', cnonce: client[:cnonce]+1, snonce: client[:snonce]})
@@ -134,6 +136,7 @@ class Server
   end
 
   def receive_command(socket, client)
+    $log.debug 'Waiting for command'
     data = JSON.load(socket.gets)
 
     payload = CryptoUtils::checkRSApayloadSignature(data, @key, client[:key])
@@ -149,6 +152,7 @@ class Server
   end
 
   def send_response(socket, client, response)
+    $log.debug "Sending response"
     client[:snonce] = Random.rand(2**31)
 
     response[:cnonce] = client[:cnonce] + 1

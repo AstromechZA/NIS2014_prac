@@ -89,7 +89,7 @@ class Client
   end
 
   def receive_responce(socket)
-    $log.debug 'Waiting for responce'
+    $log.debug 'Waiting for response'
     data = Base64.decode64(socket.gets)
 
     plaintext = CryptoUtils::decryptAES(data, @sessionkey, @sessioniv)
@@ -108,7 +108,7 @@ class Client
   end
 
   def send_command(socket, command)
-    $log.debug "Sending command: #{command}"
+    $log.info "Sending command: #{command[:action]}"
     @last_cnonce = Random.rand(2**31)
 
     payload = CryptoUtils::makeRSApayload({snonce: @last_snonce+1, cnonce: @last_cnonce}, @key, @server_key)
