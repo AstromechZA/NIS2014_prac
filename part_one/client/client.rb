@@ -164,6 +164,16 @@ class Client
       secure_doc_dt = Base64.decode64(secure_doc_dte)
       secure_doc_d = CryptoUtils::decryptAES(secure_doc_dt, key, iv)
 
+      secure_doc_d_rehash = OpenSSL::Digest::SHA1.digest(secure_doc_d)
+
+      secure_hash_dtee = document['secure_hash']
+      secure_hash_dte = Base64.decode64(secure_hash_dtee)
+      secure_hash_dt = @key.public_decrypt(secure_hash_dte)
+      secure_hash_d = JSON.load(secure_hash_dt)
+      secure_hash_v = Base64.decode64(secure_hash_d['hash'])
+
+      raise 'returned hash does not match hash of returned document!' if secure_hash_v != secure_doc_d_rehash
+
       return secure_doc_d
     else
       return nil
