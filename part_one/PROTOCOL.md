@@ -58,4 +58,50 @@ message_two: attacker can't decrypt payload
 
 
 
+FILE STORAGE
+clientside:
+    create document
+
+    1) protect document
+    AK = {k: random_key, iv: random_iv}
+
+    encrypt document with AES
+    secure_doc = EAK(document)
+
+    2) secure AES key
+    secure_k = EUc(AK)
+
+    3) make hash of document
+    {hash: ...}
+
+    4) sign hash
+    signed_hash = ERc(hash)
+
+    5) {clientid: client}
+
+    5) final = {
+        secure_doc: E_AK(document)
+        secure_key: EUc(AK)
+        signed_hash: ERc(hash)
+        secure_user: EUs(client_id)
+    }
+
+    only the client that uploaded the doc can retrieve it
+    key,iv can only be recovered by correct client on the client side
+    therefore only the client can decrypt the document
+    server can send the hash back to the client
+
+    if file is modified on server:
+        would only corrupt it
+
+
+
+
+
+
+
+
+
+
+
 

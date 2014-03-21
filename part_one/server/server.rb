@@ -51,7 +51,7 @@ class Server
               break
             end
 
-            response = perform(request)
+            response = perform(client, request)
 
             send_response(socket, client, response)
           end
@@ -167,32 +167,58 @@ class Server
     socket.puts(secure_response)
   end
 
-
-
-
-  def set(id, document)
+  def set(client, id, document)
     f = File.join(@data_dir, id)
     m = /(ID)?(\d{3})/i.match(id)
     if not m
       return {response: 1, message: "Invalid id #{id}"}
     else
+      contents = JSON.load(document)
+
+      userd = {client: client[:id]}
+      userdt = JSON.dump(userd)
+      userdth = OpenSSL::Digest::SHA1.digest(userdt)
+
+      secure_userdt = @key.public_encrypt(userdt)
+      secure_userdth = @key.private_encrypt(userdth)
+
+      contents[:secure_userdt] = Base64.strict_encode64(secure_userdt)
+      contents[:secure_userdth]= Base64.strict_encode64(secure_userdth)
+
+      File.open(f, "w") { |io| io.write(JSON.dump(contents)) }
 
       return {response: 0, message: "Stored #{m[2]}"}
     end
   end
 
-  def get(id)
+  def get(client, id)
     # check if file exists
     f = File.join(@data_dir, id)
     if File.exists?(f)
+      #read in doc
+      fb = File.open(f, 'r')
+      contents = JSON.load(fb.read)
 
+      # decrypt userthangs
+      userdt = @key.private_decrypt(Base64.decode64(contents['secure_userdt']))
+      userdth = @key.public_decrypt(Base64.decode64(contents['secure_userdth']))
+      userdreh = OpenSSL::Digest::SHA1.digest(userdt)
 
+      return {response: 1, message: "ownership corrupted"} if userdth != OpenSSL::Digest::SHA1.digest(userdt)
 
+      userd = JSON.load(userdt)
+
+      return {response: 1, message: "permission denied"} if userd['client'] != client[:id]
+
+      contents.delete('secure_userdt')
+      contents.delete('secure_userdth')
+
+      return {response: 0, message: 'permission granted', document: JSON.dump(contents)}
     end
     return {response: 1, message: "unknown id #{id}"}
   end
 
-  def verify(id)
+  def verify(client, id)
     f = File.join(@data_dir, id)
     if File.exists?(f)
 
@@ -200,15 +226,15 @@ class Server
     return {response: 1, message: "unknown id #{id}"}
   end
 
-  def perform(cmd)
+  def perform(client, cmd)
     if cmd.include? 'action'
       case cmd['action']
       when 'set'
-        return set(cmd['id'], cmd['document'])
+        return set(client, cmd['id'], cmd['text'])
       when 'get'
-        return get(cmd['id'])
+        return get(client, cmd['id'])
       when 'verify'
-        return verify(cmd['id'])
+        return verify(client, cmd['id'])
       else
         return {response: 1, message: "unknown action #{cmd['action']}"}
       end

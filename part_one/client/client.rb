@@ -124,7 +124,26 @@ class Client
   end
 
   def set(id, text)
-    send_command(@socket, {action: 'set', id: id, text: text})
+
+    contents = {}
+
+    k,iv = CryptoUtils::generateAESPair
+
+    contents[:secure_doc] = Base64.strict_encode64(CryptoUtils::encryptAES(text, k, iv))
+
+    hashd = {hash: Base64.strict_encode64(OpenSSL::Digest::SHA1.digest(text))}
+    hashdt = JSON.dump(hashd)
+
+    contents[:secure_hash] = Base64.strict_encode64(@key.private_encrypt(hashdt))
+
+    keyd = {key: Base64.strict_encode64(k), iv: Base64.strict_encode64(iv)}
+    keydt = JSON.dump(keyd)
+
+    contents[:secure_key] = Base64.strict_encode64(@key.public_encrypt(keydt))
+
+    contentst = JSON.dump(contents)
+
+    send_command(@socket, {action: 'set', id: id, text: contentst})
     p = receive_responce(@socket)
     return p['response'] == 0
   end
@@ -132,7 +151,7 @@ class Client
   def get(id)
     send_command(@socket, {action: 'get', id: id})
     p = receive_responce(@socket)
-    if not p['response'] == 0
+    if p['response'] == 0
       return p
     else
       return nil
