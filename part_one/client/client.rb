@@ -130,7 +130,6 @@ class Client
     k,iv = CryptoUtils::generateAESPair
 
     contents[:secure_doc] = Base64.strict_encode64(CryptoUtils::encryptAES(text, k, iv))
-
     hashd = {hash: Base64.strict_encode64(OpenSSL::Digest::SHA1.digest(text))}
     hashdt = JSON.dump(hashd)
 
@@ -138,7 +137,6 @@ class Client
 
     keyd = {key: Base64.strict_encode64(k), iv: Base64.strict_encode64(iv)}
     keydt = JSON.dump(keyd)
-
     contents[:secure_key] = Base64.strict_encode64(@key.public_encrypt(keydt))
 
     contentst = JSON.dump(contents)
@@ -152,7 +150,21 @@ class Client
     send_command(@socket, {action: 'get', id: id})
     p = receive_responce(@socket)
     if p['response'] == 0
-      return p
+
+      document = JSON.load(p['document'])
+
+      secure_key_dte = document['secure_key']
+      secure_key_dt = Base64.decode64(secure_key_dte)
+      secure_key_d = JSON.load(@key.private_decrypt(secure_key_dt))
+
+      key = Base64.decode64(secure_key_d['key'])
+      iv = Base64.decode64(secure_key_d['iv'])
+
+      secure_doc_dte = document['secure_doc']
+      secure_doc_dt = Base64.decode64(secure_doc_dte)
+      secure_doc_d = CryptoUtils::decryptAES(secure_doc_dt, key, iv)
+
+      return secure_doc_d
     else
       return nil
     end
