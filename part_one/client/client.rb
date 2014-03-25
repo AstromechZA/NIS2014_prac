@@ -3,6 +3,13 @@ require 'socket'
 require 'yaml'
 require 'json'
 require 'base64'
+require 'logger'
+
+$log = Logger.new(STDOUT)
+$log.level = Logger::INFO
+$log.formatter = proc do |severity, datetime, progname, msg|
+   "[#{datetime.strftime('%F %T')} #{severity}] #{msg}\n"
+end
 
 class Client
   def initialize(id, keyring)
@@ -17,12 +24,25 @@ class Client
   end
 
   def upload(id, details, remote, port)
+    $log.info "Connecting to #{remote}:#{port}"
     s = TCPSocket.new(remote, port)
+
+    $log.debug 'Sending handshake'
     n = send_handshake(s)
+
+    $log.debug 'Waiting for affirmation'
     sn, k, iv = receive_affirmation(s, n)
+
+    $log.debug 'Sending confirmation and command'
     send_confirmation_and_command(s, sn, k, iv, id, details)
+
+    $log.debug 'Waiting for response'
     receiver_response(s, k, iv)
+
     s.close
+
+    $log.debug 'Closing socket'
+    $log.info 'Done'
   end
 
   def send_handshake(socket)
@@ -72,7 +92,7 @@ class Client
     cipher.iv = iv
     r = JSON.load(cipher.update(data) + cipher.final)
 
-    puts r
+    $log.info r
 
   end
 
@@ -81,6 +101,8 @@ end
 current_dir = File.dirname(__FILE__)
 
 cnf = YAML::load_file(File.join(current_dir, 'client.yml'))
+$log.info "Starting client with #{cnf}"
+$log.level = Logger.const_get(cnf['log_level']) if cnf.has_key? 'log_level'
 
 c = Client.new(cnf['id'], File.join(current_dir, 'keyring'))
 c.upload('007', 'Some details', cnf['server'], cnf['port'])

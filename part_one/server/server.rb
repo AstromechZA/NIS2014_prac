@@ -3,6 +3,13 @@ require 'socket'
 require 'yaml'
 require 'json'
 require 'base64'
+require 'logger'
+
+$log = Logger.new(STDOUT)
+$log.level = Logger::INFO
+$log.formatter = proc do |severity, datetime, progname, msg|
+   "[#{datetime.strftime('%F %T')} #{severity}] #{msg}\n"
+end
 
 class Server
 
@@ -21,17 +28,26 @@ class Server
   end
 
   def start(port)
+    $log.info "Listening on #{port}"
     server = TCPServer.open(port)
+
     loop {
       Thread.start(server.accept) do |socket|
+        $log.info "Accepted connection from #{socket.remote_address.ip_address}:#{socket.remote_address.ip_port}"
         begin
+          $log.debug 'Waiting for handshake'
           client = receive_handshake(socket)
+
+          $log.debug 'Sending affirmation'
           n, sessionkey, iv = send_affirmation(socket, client)
+
+          $log.debug 'Waiting for confirmation and command'
           receive_confirmation_and_command(socket, client, n, sessionkey, iv)
 
           socket.close
+          $log.info 'Closing socket'
         rescue
-          puts $!.inspect, $@
+          $log.error $!.inspect, $@
         end
       end
     }
@@ -136,6 +152,8 @@ end
 current_dir = File.dirname(__FILE__)
 
 cnf = YAML::load_file(File.join(current_dir, 'server.yml'))
+$log.info "Starting server with #{cnf}"
+$log.level = Logger.const_get(cnf['log_level']) if cnf.has_key? 'log_level'
 
 keyring_dir = File.join(current_dir, 'keyring')
 data_dir = File.join(current_dir, 'data')
