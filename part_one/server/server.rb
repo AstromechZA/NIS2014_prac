@@ -6,17 +6,18 @@ require 'base64'
 
 class Server
 
-  def initialize(keyring)
-    @keyring = keyring
+  def initialize(keyring_dir, data_dir)
+    @keyring_dir = keyring_dir
+    @data_dir = data_dir
     @key = load_key 'self.pem'
   end
 
   def key_exists?(file)
-    File.exists?(File.join(@keyring, file))
+    File.exists?(File.join(@keyring_dir, file))
   end
 
   def load_key(file)
-    OpenSSL::PKey::RSA.new(File.read(File.join(@keyring, file)))
+    OpenSSL::PKey::RSA.new(File.read(File.join(@keyring_dir, file)))
   end
 
   def start(port)
@@ -52,9 +53,9 @@ class Server
     cipher.encrypt
     k = cipher.random_key
     iv = cipher.random_iv
-    payload = JSON.dump({cnonce: client[:nonce]+1, nonce: n, sessionkey: Base64.encode64(k), iv: Base64.encode64(iv)})
-    secure_payload = Base64.encode64(client[:key].public_encrypt(payload))
-    signature = Base64.encode64(@key.private_encrypt(OpenSSL::Digest::SHA1.digest(payload)))
+    payload = JSON.dump({cnonce: client[:nonce]+1, nonce: n, sessionkey: Base64.strict_encode64(k), iv: Base64.strict_encode64(iv)})
+    secure_payload = Base64.strict_encode64(client[:key].public_encrypt(payload))
+    signature = Base64.strict_encode64(@key.private_encrypt(OpenSSL::Digest::SHA1.digest(payload)))
     socket.puts(JSON.dump({payload: secure_payload, signature: signature}))
 
     return n, k, iv
@@ -76,27 +77,68 @@ class Server
 
     command = cipher.update(Base64.decode64(data['command'])) + cipher.final
     command = JSON.load(command)
-    puts command
 
+    response = perform(command)
+    response = JSON.dump(response)
+
+    cipher = OpenSSL::Cipher::AES256.new(:CBC)
     cipher.encrypt
     cipher.key = key
     cipher.iv = iv
 
-    response = JSON.dump({response: 'ok'})
-    secure_response = Base64.encode64(cipher.update(response) + cipher.final)
+    secure_response = Base64.strict_encode64(cipher.update(response) + cipher.final)
 
     socket.puts(secure_response)
   end
 
+  def set(id, details)
+    f = File.join(@data_dir, id)
 
+    return {response: 0, message: "stored"}
+  end
 
+  def get(id)
+    # check if file exists
+    f = File.join(@data_dir, id)
+    if File.exists?(f)
+
+    end
+    return {response: 1, message: "unknown id #{id}"}
+  end
+
+  def verify(id)
+    f = File.join(@data_dir, id)
+    if File.exists?(f)
+
+    end
+    return {response: 1, message: "unknown id #{id}"}
+  end
+
+  def perform(cmd)
+    if cmd.include? 'action'
+      case cmd['action']
+      when 'set'
+        return set(cmd['id'], cmd['details'])
+      when 'get'
+        return get(cmd['id'])
+      when 'verify'
+        return verify(cmd['id'])
+      else
+        return {response: 1, message: "unknown action #{cmd['action']}"}
+      end
+    else
+      return {response: 1, message: 'no action supplied'}
+    end
+  end
 
 end
 
 current_dir = File.dirname(__FILE__)
 
 cnf = YAML::load_file(File.join(current_dir, 'server.yml'))
-puts cnf
 
-s = Server.new(File.join(current_dir, 'keyring'))
+keyring_dir = File.join(current_dir, 'keyring')
+data_dir = File.join(current_dir, 'data')
+
+s = Server.new(keyring_dir, data_dir)
 s.start(cnf['listenPort'])

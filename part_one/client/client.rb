@@ -28,8 +28,8 @@ class Client
   def send_handshake(socket)
     n = Random.rand(2**31)
     payload = JSON.dump({id: @id, nonce: n})
-    secure_payload = Base64.encode64(@server_key.public_encrypt(payload))
-    signature = Base64.encode64(@key.private_encrypt(OpenSSL::Digest::SHA1.digest(payload)))
+    secure_payload = Base64.strict_encode64(@server_key.public_encrypt(payload))
+    signature = Base64.strict_encode64(@key.private_encrypt(OpenSSL::Digest::SHA1.digest(payload)))
     socket.puts(JSON.dump({payload: secure_payload, signature: signature}))
 
     return n
@@ -49,8 +49,8 @@ class Client
 
   def send_confirmation_and_command(socket, nonce, sessionkey, iv, id, details)
     payload = JSON.dump({snonce: nonce+1})
-    secure_payload = Base64.encode64(@server_key.public_encrypt(payload))
-    signature = Base64.encode64(@key.private_encrypt(OpenSSL::Digest::SHA1.digest(payload)))
+    secure_payload = Base64.strict_encode64(@server_key.public_encrypt(payload))
+    signature = Base64.strict_encode64(@key.private_encrypt(OpenSSL::Digest::SHA1.digest(payload)))
 
     command = JSON.dump({id: id, details: details})
 
@@ -59,19 +59,17 @@ class Client
     cipher.key = sessionkey
     cipher.iv = iv
 
-    secure_command = Base64.encode64(cipher.update(command) + cipher.final)
+    secure_command = Base64.strict_encode64(cipher.update(command) + cipher.final)
 
     socket.puts(JSON.dump({payload: secure_payload, signature: signature, command: secure_command}))
   end
 
   def receiver_response(socket, key, iv)
     data = Base64.decode64(socket.gets)
-
     cipher = OpenSSL::Cipher::AES256.new(:CBC)
     cipher.decrypt
     cipher.key = key
     cipher.iv = iv
-
     r = JSON.load(cipher.update(data) + cipher.final)
 
     puts r
@@ -83,7 +81,6 @@ end
 current_dir = File.dirname(__FILE__)
 
 cnf = YAML::load_file(File.join(current_dir, 'client.yml'))
-puts cnf
 
 c = Client.new(cnf['id'], File.join(current_dir, 'keyring'))
 c.upload('007', 'Some details', cnf['server'], cnf['port'])
