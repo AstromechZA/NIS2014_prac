@@ -64,6 +64,7 @@ class Client
     valid = (nonce + 1) == payload['cnonce']
     raise 'nonce error' if not valid
 
+    $log.info('Server is now trusted. (auth + fresh)')
     return payload['nonce'], Base64.decode64(payload['sessionkey']), Base64.decode64(payload['iv'])
   end
 

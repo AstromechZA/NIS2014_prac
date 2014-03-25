@@ -86,6 +86,8 @@ class Server
     valid = (nonce + 1) == payload['snonce']
     raise 'nonce error' if not valid
 
+    $log.info('Client is now trusted. (auth + fresh)')
+
     cipher = OpenSSL::Cipher::AES256.new(:CBC)
     cipher.decrypt
     cipher.key = key
