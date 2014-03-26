@@ -17,12 +17,8 @@ class Client
   def initialize(id, keyring)
     @id = id
     @keyring = keyring
-    @key = load_key 'self.pem'
-    @server_key = load_key 'server.pem'
-  end
-
-  def load_key(file)
-    OpenSSL::PKey::RSA.new(File.read(File.join(@keyring, file)))
+    @key = CryptoUtils::load_key File.join(@keyring, 'self.pem')
+    @server_key = CryptoUtils::load_key File.join(@keyring, 'server.pem')
   end
 
   def upload(id, details, remote, port)

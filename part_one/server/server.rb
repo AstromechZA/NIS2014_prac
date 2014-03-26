@@ -18,15 +18,11 @@ class Server
   def initialize(keyring_dir, data_dir)
     @keyring_dir = keyring_dir
     @data_dir = data_dir
-    @key = load_key 'self.pem'
+    @key = CryptoUtils::load_key File.join(@keyring_dir, 'self.pem')
   end
 
   def key_exists?(file)
     File.exists?(File.join(@keyring_dir, file))
-  end
-
-  def load_key(file)
-    OpenSSL::PKey::RSA.new(File.read(File.join(@keyring_dir, file)))
   end
 
   def start(port)
@@ -59,7 +55,11 @@ class Server
     data = JSON.load(socket.gets)
 
     payload = JSON.load(@key.private_decrypt(Base64.decode64(data['payload'])))
-    client = {id: payload['id'], nonce: payload['nonce'], key: load_key("#{payload['id']}.pem")}
+    client = {
+      id: payload['id'],
+      nonce: payload['nonce'],
+      key: CryptoUtils::load_key(File.join(@keyring_dir, "#{payload['id']}.pem"))
+    }
 
     CryptoUtils::checkRSApayloadSignature(data, @key, client[:key])
 

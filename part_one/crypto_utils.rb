@@ -3,6 +3,12 @@ require 'base64'
 require 'openssl'
 
 module CryptoUtils
+
+
+  def load_key(path)
+    OpenSSL::PKey::RSA.new(File.read(path))
+  end
+
   def makeRSApayload(hash, selfkey, otherkey)
     payload = JSON.dump(hash)
     secure_payload = Base64.strict_encode64(otherkey.public_encrypt(payload))
@@ -35,6 +41,7 @@ module CryptoUtils
     return cipher.update(bytes) + cipher.final
   end
 
+  module_function :load_key
   module_function :makeRSApayload
   module_function :checkRSApayloadSignature
   module_function :encryptAES
