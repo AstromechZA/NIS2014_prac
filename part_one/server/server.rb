@@ -38,10 +38,15 @@ class Server
           client = receive_handshake(socket)
 
           $log.debug 'Sending affirmation'
-          snonce, sessionkey, iv = send_affirmation(socket, client)
+          send_affirmation(socket, client)
 
           $log.debug 'Waiting for confirmation and command'
-          receive_confirmation_and_command(socket, client, snonce, sessionkey, iv)
+          receive_confirmation(socket, client)
+
+          $log.debug 'Sending Ready'
+          send_ready(socket, client)
+
+
 
           $log.info 'Closing socket'
         rescue Exception => e
@@ -69,39 +74,50 @@ class Server
   end
 
   def send_affirmation(socket, client)
-    n = Random.rand(2**31)
+    client[:snonce] = Random.rand(2**31)
 
     k, iv = CryptoUtils::generateAESPair
 
+    client[:sessionkey] = k
+    client[:sessioniv] = iv
+
     payload = CryptoUtils::makeRSApayload(
-      {cnonce: client[:cnonce]+1, snonce: n, sessionkey: Base64.strict_encode64(k), iv: Base64.strict_encode64(iv)},
+      {
+        cnonce: client[:cnonce]+1,
+        snonce: client[:snonce],
+        sessionkey: Base64.strict_encode64(k),
+        iv: Base64.strict_encode64(iv)
+      },
       @key,
       client[:key]
     )
 
     socket.puts(JSON.dump(payload))
-
-    return n, k, iv
   end
 
-  def receive_confirmation_and_command(socket, client, snonce, key, iv)
+  def receive_confirmation(socket, client)
     data = JSON.load(socket.gets)
 
     payload = CryptoUtils::checkRSApayloadSignature(data, @key, client[:key])
 
-    valid = (snonce + 1) == payload['snonce']
+    valid = (client[:snonce] + 1) == payload['snonce']
     raise 'nonce error' if not valid
 
     $log.info('Client is now trusted. (auth + fresh)')
 
-    plaintext = CryptoUtils::decryptAES(Base64.decode64(data['command']), key, iv)
+    plaintext = CryptoUtils::decryptAES(Base64.decode64(data['check']), client[:sessionkey], client[:sessioniv])
 
-    command = JSON.load(plaintext)
+    raise 'aes check error' if not plaintext == 'abcdefghijklmnopqrstuvwxyz'
 
-    response = perform(command)
-    response = JSON.dump(response)
+    client[:cnonce] = payload['cnonce']
+  end
 
-    ciphertext = CryptoUtils::encryptAES(response, key, iv)
+  def send_ready(socket, client)
+    client[:snonce] = Random.rand(2**31)
+
+    response = JSON.dump({response: 0, message: 'ready', cnonce: client[:cnonce]+1, snonce: client[:snonce]})
+
+    ciphertext = CryptoUtils::encryptAES(response, client[:sessionkey], client[:sessioniv])
 
     secure_response = Base64.strict_encode64(ciphertext)
 

@@ -19,6 +19,10 @@ class Client
     @keyring = keyring
     @key = CryptoUtils::load_key File.join(@keyring, 'self.pem')
     @server_key = CryptoUtils::load_key File.join(@keyring, 'server.pem')
+    @sessionkey = nil
+    @sessioniv = nil
+    @last_cnonce = nil
+    @last_snonce = nil
   end
 
   def perform(command, remote, port)
@@ -26,16 +30,16 @@ class Client
     socket = TCPSocket.new(remote, port)
 
     $log.debug 'Sending handshake'
-    cnonce = send_handshake(socket)
+    send_handshake(socket)
 
     $log.debug 'Waiting for affirmation'
-    snonce, key, iv = receive_affirmation(socket, cnonce)
+    receive_affirmation(socket)
 
-    $log.debug 'Sending confirmation and command'
-    send_confirmation_and_command(socket, snonce, key, iv, command)
+    $log.debug 'Sending confirmation'
+    send_confirmation(socket)
 
-    $log.debug 'Waiting for response'
-    receiver_response(socket, key, iv)
+    $log.debug 'Waiting for ready'
+    receive_ready(socket)
 
     socket.close
 
@@ -47,59 +51,53 @@ class Client
   # Identifies the client to the server
   def send_handshake(socket)
     # create nonce
-    n = Random.rand(2**31)
+    @last_cnonce = Random.rand(2**31)
     # construct payload with signed version
-    payload = CryptoUtils::makeRSApayload({id: @id, cnonce: n}, @key, @server_key)
+    payload = CryptoUtils::makeRSApayload({id: @id, cnonce: @last_cnonce}, @key, @server_key)
     # send to server
     socket.puts(JSON.dump(payload))
-    # return nonce value
-    return n
   end
 
   # affirmation message
   # Server sends back incremented client nonce, server nonce, and a master key+iv
-  def receive_affirmation(socket, cnonce)
+  def receive_affirmation(socket)
     # get message
     data = JSON.load(socket.gets)
     # verify signature
     payload = CryptoUtils::checkRSApayloadSignature(data, @key, @server_key)
     # verify nonce
-    valid = (cnonce + 1) == payload['cnonce']
+    valid = (@last_cnonce + 1) == payload['cnonce']
     raise 'nonce error' if not valid
     # state
     $log.info('Server is now trusted. (auth + fresh)')
-    # return
-    return payload['snonce'], Base64.decode64(payload['sessionkey']), Base64.decode64(payload['iv'])
+
+    @last_snonce = payload['snonce']
+    @sessionkey = Base64.decode64(payload['sessionkey'])
+    @sessioniv = Base64.decode64(payload['iv'])
   end
 
   # confirmation
+  def send_confirmation(socket)
+    @last_cnonce = Random.rand(2**31)
 
-  def send_confirmation_and_command(socket, snonce, key, iv, command)
-    n = Random.rand(2**31)
+    payload = CryptoUtils::makeRSApayload({snonce: @last_snonce+1, cnonce: @last_cnonce}, @key, @server_key)
 
-    payload = CryptoUtils::makeRSApayload({snonce: snonce+1, cnonce: n}, @key, @server_key)
+    ciphertext = CryptoUtils::encryptAES('abcdefghijklmnopqrstuvwxyz', @sessionkey, @sessioniv)
 
-    command = JSON.dump(command)
-
-    ciphertext = CryptoUtils::encryptAES(command, key, iv)
-
-    secure_command = Base64.strict_encode64(ciphertext)
-
-    payload[:command] = secure_command
+    payload[:check] = Base64.strict_encode64(ciphertext)
 
     socket.puts(JSON.dump(payload))
   end
 
-
-  def receiver_response(socket, key, iv)
+  def receive_ready(socket)
     data = Base64.decode64(socket.gets)
 
-    plaintext = CryptoUtils::decryptAES(data, key, iv)
+    plaintext = CryptoUtils::decryptAES(data, @sessionkey, @sessioniv)
 
-    r = JSON.load(plaintext)
+    payload = JSON.load(plaintext)
 
-    if r['response'] == 0
-      $log.info r
+    if payload['response'] == 0
+      $log.info payload
     else
       $log.error "Server error '#{r['message']}'"
     end
