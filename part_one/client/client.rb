@@ -4,6 +4,8 @@ require 'yaml'
 require 'json'
 require 'base64'
 require 'logger'
+$: << File.join(File.dirname(__FILE__), '..')
+require 'crypto_utils'
 
 $log = Logger.new(STDOUT)
 $log.level = Logger::INFO
@@ -22,8 +24,6 @@ class Client
   def load_key(file)
     OpenSSL::PKey::RSA.new(File.read(File.join(@keyring, file)))
   end
-
-
 
   def upload(id, details, remote, port)
     $log.info "Connecting to #{remote}:#{port}"
@@ -47,42 +47,10 @@ class Client
     $log.info 'Done'
   end
 
-  def makeRSApayload(hash, selfkey, otherkey)
-    payload = JSON.dump(hash)
-    secure_payload = Base64.strict_encode64(otherkey.public_encrypt(payload))
-    signature = Base64.strict_encode64(selfkey.private_encrypt(OpenSSL::Digest::SHA1.digest(payload)))
-    return {payload: secure_payload, signature: signature}
-  end
-
-  def checkRSApayloadSignature(data, selfkey, otherkey)
-    payload = JSON.load(selfkey.private_decrypt(Base64.decode64(data['payload'])))
-    valid = OpenSSL::Digest::SHA1.digest(JSON.dump(payload)) == otherkey.public_decrypt(Base64.decode64(data['signature']))
-    raise 'signature error' if not valid
-    return payload
-  end
-
-  def encryptAES(string, key, iv)
-    cipher = OpenSSL::Cipher::AES256.new(:CBC)
-    cipher.encrypt
-    cipher.key = key
-    cipher.iv = iv
-
-    return cipher.update(string) + cipher.final
-  end
-
-  def decryptAES(bytes, key, iv)
-    cipher = OpenSSL::Cipher::AES256.new(:CBC)
-    cipher.decrypt
-    cipher.key = key
-    cipher.iv = iv
-
-    return cipher.update(bytes) + cipher.final
-  end
-
   def send_handshake(socket)
     n = Random.rand(2**31)
 
-    payload = makeRSApayload({id: @id, nonce: n}, @key, @server_key)
+    payload = CryptoUtils::makeRSApayload({id: @id, nonce: n}, @key, @server_key)
     socket.puts(JSON.dump(payload))
 
     return n
@@ -91,7 +59,7 @@ class Client
   def receive_affirmation(socket, nonce)
     data = JSON.load(socket.gets)
 
-    payload = checkRSApayloadSignature(data, @key, @server_key)
+    payload = CryptoUtils::checkRSApayloadSignature(data, @key, @server_key)
 
     valid = (nonce + 1) == payload['cnonce']
     raise 'nonce error' if not valid
@@ -103,11 +71,11 @@ class Client
   def send_confirmation_and_command(socket, snonce, sessionkey, iv, command)
     n = Random.rand(2**31)
 
-    payload = makeRSApayload({snonce: snonce+1, cnonce: n}, @key, @server_key)
+    payload = CryptoUtils::makeRSApayload({snonce: snonce+1, cnonce: n}, @key, @server_key)
 
     command = JSON.dump(command)
 
-    ciphertext = encryptAES(command, sessionkey, iv)
+    ciphertext = CryptoUtils::encryptAES(command, sessionkey, iv)
 
     secure_command = Base64.strict_encode64(ciphertext)
 
@@ -120,7 +88,7 @@ class Client
   def receiver_response(socket, key, iv)
     data = Base64.decode64(socket.gets)
 
-    plaintext = decryptAES(data, key, iv)
+    plaintext = CryptoUtils::decryptAES(data, key, iv)
 
     r = JSON.load(plaintext)
 

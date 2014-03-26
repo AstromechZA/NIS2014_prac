@@ -4,6 +4,8 @@ require 'yaml'
 require 'json'
 require 'base64'
 require 'logger'
+$: << File.join(File.dirname(__FILE__), '..')
+require 'crypto_utils'
 
 $log = Logger.new(STDOUT)
 $log.level = Logger::INFO
@@ -25,38 +27,6 @@ class Server
 
   def load_key(file)
     OpenSSL::PKey::RSA.new(File.read(File.join(@keyring_dir, file)))
-  end
-
-  def makeRSApayload(hash, selfkey, otherkey)
-    payload = JSON.dump(hash)
-    secure_payload = Base64.strict_encode64(otherkey.public_encrypt(payload))
-    signature = Base64.strict_encode64(selfkey.private_encrypt(OpenSSL::Digest::SHA1.digest(payload)))
-    return {payload: secure_payload, signature: signature}
-  end
-
-  def checkRSApayloadSignature(data, selfkey, otherkey)
-    payload = JSON.load(selfkey.private_decrypt(Base64.decode64(data['payload'])))
-    valid = OpenSSL::Digest::SHA1.digest(JSON.dump(payload)) == otherkey.public_decrypt(Base64.decode64(data['signature']))
-    raise 'signature error' if not valid
-    return payload
-  end
-
-  def encryptAES(string, key, iv)
-    cipher = OpenSSL::Cipher::AES256.new(:CBC)
-    cipher.encrypt
-    cipher.key = key
-    cipher.iv = iv
-
-    return cipher.update(string) + cipher.final
-  end
-
-  def decryptAES(bytes, key, iv)
-    cipher = OpenSSL::Cipher::AES256.new(:CBC)
-    cipher.decrypt
-    cipher.key = key
-    cipher.iv = iv
-
-    return cipher.update(bytes) + cipher.final
   end
 
   def start(port)
@@ -91,7 +61,7 @@ class Server
     payload = JSON.load(@key.private_decrypt(Base64.decode64(data['payload'])))
     client = {id: payload['id'], nonce: payload['nonce'], key: load_key("#{payload['id']}.pem")}
 
-    checkRSApayloadSignature(data, @key, client[:key])
+    CryptoUtils::checkRSApayloadSignature(data, @key, client[:key])
 
     return client
   end
@@ -104,7 +74,7 @@ class Server
     k = cipher.random_key
     iv = cipher.random_iv
 
-    payload = makeRSApayload(
+    payload = CryptoUtils::makeRSApayload(
       {cnonce: client[:nonce]+1, nonce: n, sessionkey: Base64.strict_encode64(k), iv: Base64.strict_encode64(iv)},
       @key,
       client[:key]
@@ -118,21 +88,21 @@ class Server
   def receive_confirmation_and_command(socket, client, nonce, key, iv)
     data = JSON.load(socket.gets)
 
-    payload = checkRSApayloadSignature(data, @key, client[:key])
+    payload = CryptoUtils::checkRSApayloadSignature(data, @key, client[:key])
 
     valid = (nonce + 1) == payload['snonce']
     raise 'nonce error' if not valid
 
     $log.info('Client is now trusted. (auth + fresh)')
 
-    plaintext = decryptAES(Base64.decode64(data['command']), key, iv)
+    plaintext = CryptoUtils::decryptAES(Base64.decode64(data['command']), key, iv)
 
     command = JSON.load(plaintext)
 
     response = perform(command)
     response = JSON.dump(response)
 
-    ciphertext = encryptAES(response, key, iv)
+    ciphertext = CryptoUtils::encryptAES(response, key, iv)
 
     secure_response = Base64.strict_encode64(ciphertext)
 
