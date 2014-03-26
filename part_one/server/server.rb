@@ -27,6 +27,38 @@ class Server
     OpenSSL::PKey::RSA.new(File.read(File.join(@keyring_dir, file)))
   end
 
+  def makeRSApayload(hash, selfkey, otherkey)
+    payload = JSON.dump(hash)
+    secure_payload = Base64.strict_encode64(otherkey.public_encrypt(payload))
+    signature = Base64.strict_encode64(selfkey.private_encrypt(OpenSSL::Digest::SHA1.digest(payload)))
+    return {payload: secure_payload, signature: signature}
+  end
+
+  def checkRSApayloadSignature(data, selfkey, otherkey)
+    payload = JSON.load(selfkey.private_decrypt(Base64.decode64(data['payload'])))
+    valid = OpenSSL::Digest::SHA1.digest(JSON.dump(payload)) == otherkey.public_decrypt(Base64.decode64(data['signature']))
+    raise 'signature error' if not valid
+    return payload
+  end
+
+  def encryptAES(string, key, iv)
+    cipher = OpenSSL::Cipher::AES256.new(:CBC)
+    cipher.encrypt
+    cipher.key = key
+    cipher.iv = iv
+
+    return cipher.update(string) + cipher.final
+  end
+
+  def decryptAES(bytes, key, iv)
+    cipher = OpenSSL::Cipher::AES256.new(:CBC)
+    cipher.decrypt
+    cipher.key = key
+    cipher.iv = iv
+
+    return cipher.update(bytes) + cipher.final
+  end
+
   def start(port)
     $log.info "Listening on #{port}"
     server = TCPServer.open(port)
@@ -55,56 +87,54 @@ class Server
 
   def receive_handshake(socket)
     data = JSON.load(socket.gets)
+
     payload = JSON.load(@key.private_decrypt(Base64.decode64(data['payload'])))
     client = {id: payload['id'], nonce: payload['nonce'], key: load_key("#{payload['id']}.pem")}
-    valid = OpenSSL::Digest::SHA1.digest(JSON.dump(payload)) == client[:key].public_decrypt(Base64.decode64(data['signature']))
-    raise 'signature error' if not valid
+
+    checkRSApayloadSignature(data, @key, client[:key])
 
     return client
   end
 
   def send_affirmation(socket, client)
     n = Random.rand(2**31)
+
     cipher = OpenSSL::Cipher::AES256.new(:CBC)
     cipher.encrypt
     k = cipher.random_key
     iv = cipher.random_iv
-    payload = JSON.dump({cnonce: client[:nonce]+1, nonce: n, sessionkey: Base64.strict_encode64(k), iv: Base64.strict_encode64(iv)})
-    secure_payload = Base64.strict_encode64(client[:key].public_encrypt(payload))
-    signature = Base64.strict_encode64(@key.private_encrypt(OpenSSL::Digest::SHA1.digest(payload)))
-    socket.puts(JSON.dump({payload: secure_payload, signature: signature}))
+
+    payload = makeRSApayload(
+      {cnonce: client[:nonce]+1, nonce: n, sessionkey: Base64.strict_encode64(k), iv: Base64.strict_encode64(iv)},
+      @key,
+      client[:key]
+    )
+
+    socket.puts(JSON.dump(payload))
 
     return n, k, iv
   end
 
   def receive_confirmation_and_command(socket, client, nonce, key, iv)
     data = JSON.load(socket.gets)
-    payload = JSON.load(@key.private_decrypt(Base64.decode64(data['payload'])))
-    valid = OpenSSL::Digest::SHA1.digest(JSON.dump(payload)) == client[:key].public_decrypt(Base64.decode64(data['signature']))
-    raise 'signature error' if not valid
+
+    payload = checkRSApayloadSignature(data, @key, client[:key])
 
     valid = (nonce + 1) == payload['snonce']
     raise 'nonce error' if not valid
 
     $log.info('Client is now trusted. (auth + fresh)')
 
-    cipher = OpenSSL::Cipher::AES256.new(:CBC)
-    cipher.decrypt
-    cipher.key = key
-    cipher.iv = iv
+    plaintext = decryptAES(Base64.decode64(data['command']), key, iv)
 
-    command = cipher.update(Base64.decode64(data['command'])) + cipher.final
-    command = JSON.load(command)
+    command = JSON.load(plaintext)
 
     response = perform(command)
     response = JSON.dump(response)
 
-    cipher = OpenSSL::Cipher::AES256.new(:CBC)
-    cipher.encrypt
-    cipher.key = key
-    cipher.iv = iv
+    ciphertext = encryptAES(response, key, iv)
 
-    secure_response = Base64.strict_encode64(cipher.update(response) + cipher.final)
+    secure_response = Base64.strict_encode64(ciphertext)
 
     socket.puts(secure_response)
   end

@@ -61,6 +61,24 @@ class Client
     return payload
   end
 
+  def encryptAES(string, key, iv)
+    cipher = OpenSSL::Cipher::AES256.new(:CBC)
+    cipher.encrypt
+    cipher.key = key
+    cipher.iv = iv
+
+    return cipher.update(string) + cipher.final
+  end
+
+  def decryptAES(bytes, key, iv)
+    cipher = OpenSSL::Cipher::AES256.new(:CBC)
+    cipher.decrypt
+    cipher.key = key
+    cipher.iv = iv
+
+    return cipher.update(bytes) + cipher.final
+  end
+
   def send_handshake(socket)
     n = Random.rand(2**31)
 
@@ -87,14 +105,11 @@ class Client
 
     payload = makeRSApayload({snonce: snonce+1, cnonce: n}, @key, @server_key)
 
-    cipher = OpenSSL::Cipher::AES256.new(:CBC)
-    cipher.encrypt
-    cipher.key = sessionkey
-    cipher.iv = iv
-
     command = JSON.dump(command)
 
-    secure_command = Base64.strict_encode64(cipher.update(command) + cipher.final)
+    ciphertext = encryptAES(command, sessionkey, iv)
+
+    secure_command = Base64.strict_encode64(ciphertext)
 
     payload[:command] = secure_command
 
@@ -104,11 +119,10 @@ class Client
 
   def receiver_response(socket, key, iv)
     data = Base64.decode64(socket.gets)
-    cipher = OpenSSL::Cipher::AES256.new(:CBC)
-    cipher.decrypt
-    cipher.key = key
-    cipher.iv = iv
-    r = JSON.load(cipher.update(data) + cipher.final)
+
+    plaintext = decryptAES(data, key, iv)
+
+    r = JSON.load(plaintext)
 
     if r['response'] == 0
       $log.info r
