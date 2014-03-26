@@ -18,6 +18,7 @@ class Server
   def initialize(keyring_dir, data_dir)
     @keyring_dir = keyring_dir
     @data_dir = data_dir
+    Dir.mkdir(@data_dir) if not File.exists?(@data_dir)
     @key = CryptoUtils::load_key File.join(@keyring_dir, 'self.pem')
   end
 
@@ -42,11 +43,12 @@ class Server
           $log.debug 'Waiting for confirmation and command'
           receive_confirmation_and_command(socket, client, snonce, sessionkey, iv)
 
-          socket.close
           $log.info 'Closing socket'
-        rescue
-          $log.error $!.inspect, $@
+        rescue Exception => e
+          $log.error "#{e.message}"
         end
+        $log.info "Closing connection to #{socket.remote_address.ip_address}:#{socket.remote_address.ip_port}"
+        socket.close
       end
     }
   end
@@ -69,10 +71,7 @@ class Server
   def send_affirmation(socket, client)
     n = Random.rand(2**31)
 
-    cipher = OpenSSL::Cipher::AES256.new(:CBC)
-    cipher.encrypt
-    k = cipher.random_key
-    iv = cipher.random_iv
+    k, iv = CryptoUtils::generateAESPair
 
     payload = CryptoUtils::makeRSApayload(
       {cnonce: client[:cnonce]+1, snonce: n, sessionkey: Base64.strict_encode64(k), iv: Base64.strict_encode64(iv)},
@@ -109,16 +108,23 @@ class Server
     socket.puts(secure_response)
   end
 
-  def set(id, details)
+  def set(id, document)
     f = File.join(@data_dir, id)
+    m = /(ID)?(\d{3})/i.match(id)
+    if not m
+      return {response: 1, message: "Invalid id #{id}"}
+    else
 
-    return {response: 0, message: "stored"}
+      return {response: 0, message: "Stored #{m[2]}"}
+    end
   end
 
   def get(id)
     # check if file exists
     f = File.join(@data_dir, id)
     if File.exists?(f)
+
+
 
     end
     return {response: 1, message: "unknown id #{id}"}
@@ -136,7 +142,7 @@ class Server
     if cmd.include? 'action'
       case cmd['action']
       when 'set'
-        return set(cmd['id'], cmd['details'])
+        return set(cmd['id'], cmd['document'])
       when 'get'
         return get(cmd['id'])
       when 'verify'

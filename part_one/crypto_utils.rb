@@ -41,9 +41,18 @@ module CryptoUtils
     return cipher.update(bytes) + cipher.final
   end
 
+  def generateAESPair
+    cipher = OpenSSL::Cipher::AES256.new(:CBC)
+    cipher.encrypt
+    k = cipher.random_key
+    iv = cipher.random_iv
+    return k, iv
+  end
+
   module_function :load_key
   module_function :makeRSApayload
   module_function :checkRSApayloadSignature
   module_function :encryptAES
   module_function :decryptAES
+  module_function :generateAESPair
 end

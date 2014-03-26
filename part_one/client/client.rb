@@ -21,7 +21,7 @@ class Client
     @server_key = CryptoUtils::load_key File.join(@keyring, 'server.pem')
   end
 
-  def upload(id, details, remote, port)
+  def perform(command, remote, port)
     $log.info "Connecting to #{remote}:#{port}"
     socket = TCPSocket.new(remote, port)
 
@@ -32,7 +32,7 @@ class Client
     snonce, key, iv = receive_affirmation(socket, cnonce)
 
     $log.debug 'Sending confirmation and command'
-    send_confirmation_and_command(socket, snonce, key, iv, {id: id, details: details})
+    send_confirmation_and_command(socket, snonce, key, iv, command)
 
     $log.debug 'Waiting for response'
     receiver_response(socket, key, iv)
@@ -116,7 +116,15 @@ $log.info "Starting client with #{cnf}"
 $log.level = Logger.const_get(cnf['log_level']) if cnf.has_key? 'log_level'
 
 c = Client.new(cnf['id'], File.join(current_dir, 'keyring'))
-c.upload('007', 'Some details', cnf['server'], cnf['port'])
+c.perform(
+  {
+    action: 'get',
+    id: '007',
+    document: 'Bond,James,High Priority'
+  },
+  cnf['server'],
+  cnf['port']
+)
 
 
 
