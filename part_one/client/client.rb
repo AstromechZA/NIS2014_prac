@@ -23,6 +23,8 @@ class Client
     OpenSSL::PKey::RSA.new(File.read(File.join(@keyring, file)))
   end
 
+
+
   def upload(id, details, remote, port)
     $log.info "Connecting to #{remote}:#{port}"
     s = TCPSocket.new(remote, port)
@@ -34,7 +36,7 @@ class Client
     sn, k, iv = receive_affirmation(s, n)
 
     $log.debug 'Sending confirmation and command'
-    send_confirmation_and_command(s, sn, k, iv, id, details)
+    send_confirmation_and_command(s, sn, k, iv, {id: id, details: details})
 
     $log.debug 'Waiting for response'
     receiver_response(s, k, iv)
@@ -45,21 +47,33 @@ class Client
     $log.info 'Done'
   end
 
+  def makeRSApayload(hash, selfkey, otherkey)
+    payload = JSON.dump(hash)
+    secure_payload = Base64.strict_encode64(otherkey.public_encrypt(payload))
+    signature = Base64.strict_encode64(selfkey.private_encrypt(OpenSSL::Digest::SHA1.digest(payload)))
+    return {payload: secure_payload, signature: signature}
+  end
+
+  def checkRSApayloadSignature(data, selfkey, otherkey)
+    payload = JSON.load(selfkey.private_decrypt(Base64.decode64(data['payload'])))
+    valid = OpenSSL::Digest::SHA1.digest(JSON.dump(payload)) == otherkey.public_decrypt(Base64.decode64(data['signature']))
+    raise 'signature error' if not valid
+    return payload
+  end
+
   def send_handshake(socket)
     n = Random.rand(2**31)
-    payload = JSON.dump({id: @id, nonce: n})
-    secure_payload = Base64.strict_encode64(@server_key.public_encrypt(payload))
-    signature = Base64.strict_encode64(@key.private_encrypt(OpenSSL::Digest::SHA1.digest(payload)))
-    socket.puts(JSON.dump({payload: secure_payload, signature: signature}))
+
+    payload = makeRSApayload({id: @id, nonce: n}, @key, @server_key)
+    socket.puts(JSON.dump(payload))
 
     return n
   end
 
   def receive_affirmation(socket, nonce)
     data = JSON.load(socket.gets)
-    payload = JSON.load(@key.private_decrypt(Base64.decode64(data['payload'])))
-    valid = OpenSSL::Digest::SHA1.digest(JSON.dump(payload)) == @server_key.public_decrypt(Base64.decode64(data['signature']))
-    raise 'signature error' if not valid
+
+    payload = checkRSApayloadSignature(data, @key, @server_key)
 
     valid = (nonce + 1) == payload['cnonce']
     raise 'nonce error' if not valid
@@ -68,22 +82,25 @@ class Client
     return payload['nonce'], Base64.decode64(payload['sessionkey']), Base64.decode64(payload['iv'])
   end
 
-  def send_confirmation_and_command(socket, nonce, sessionkey, iv, id, details)
-    payload = JSON.dump({snonce: nonce+1})
-    secure_payload = Base64.strict_encode64(@server_key.public_encrypt(payload))
-    signature = Base64.strict_encode64(@key.private_encrypt(OpenSSL::Digest::SHA1.digest(payload)))
+  def send_confirmation_and_command(socket, snonce, sessionkey, iv, command)
+    n = Random.rand(2**31)
 
-    command = JSON.dump({id: id, details: details})
+    payload = makeRSApayload({snonce: snonce+1, cnonce: n}, @key, @server_key)
 
     cipher = OpenSSL::Cipher::AES256.new(:CBC)
     cipher.encrypt
     cipher.key = sessionkey
     cipher.iv = iv
 
+    command = JSON.dump(command)
+
     secure_command = Base64.strict_encode64(cipher.update(command) + cipher.final)
 
-    socket.puts(JSON.dump({payload: secure_payload, signature: signature, command: secure_command}))
+    payload[:command] = secure_command
+
+    socket.puts(JSON.dump(payload))
   end
+
 
   def receiver_response(socket, key, iv)
     data = Base64.decode64(socket.gets)
