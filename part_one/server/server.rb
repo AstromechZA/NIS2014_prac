@@ -37,10 +37,10 @@ class Server
           client = receive_handshake(socket)
 
           $log.debug 'Sending affirmation'
-          n, sessionkey, iv = send_affirmation(socket, client)
+          snonce, sessionkey, iv = send_affirmation(socket, client)
 
           $log.debug 'Waiting for confirmation and command'
-          receive_confirmation_and_command(socket, client, n, sessionkey, iv)
+          receive_confirmation_and_command(socket, client, snonce, sessionkey, iv)
 
           socket.close
           $log.info 'Closing socket'
@@ -57,7 +57,7 @@ class Server
     payload = JSON.load(@key.private_decrypt(Base64.decode64(data['payload'])))
     client = {
       id: payload['id'],
-      nonce: payload['nonce'],
+      cnonce: payload['cnonce'],
       key: CryptoUtils::load_key(File.join(@keyring_dir, "#{payload['id']}.pem"))
     }
 
@@ -75,7 +75,7 @@ class Server
     iv = cipher.random_iv
 
     payload = CryptoUtils::makeRSApayload(
-      {cnonce: client[:nonce]+1, nonce: n, sessionkey: Base64.strict_encode64(k), iv: Base64.strict_encode64(iv)},
+      {cnonce: client[:cnonce]+1, snonce: n, sessionkey: Base64.strict_encode64(k), iv: Base64.strict_encode64(iv)},
       @key,
       client[:key]
     )
@@ -85,12 +85,12 @@ class Server
     return n, k, iv
   end
 
-  def receive_confirmation_and_command(socket, client, nonce, key, iv)
+  def receive_confirmation_and_command(socket, client, snonce, key, iv)
     data = JSON.load(socket.gets)
 
     payload = CryptoUtils::checkRSApayloadSignature(data, @key, client[:key])
 
-    valid = (nonce + 1) == payload['snonce']
+    valid = (snonce + 1) == payload['snonce']
     raise 'nonce error' if not valid
 
     $log.info('Client is now trusted. (auth + fresh)')
