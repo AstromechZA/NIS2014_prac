@@ -93,7 +93,12 @@ class Client
     cipher.iv = iv
     r = JSON.load(cipher.update(data) + cipher.final)
 
-    $log.info r
+    if r['response'] == 0
+      $log.info r
+    else
+      $log.error "Server error '#{r['message']}'"
+    end
+
 
   end
 
