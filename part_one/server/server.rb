@@ -177,6 +177,13 @@ class Server
     File.open(f, 'w') do |io|
       # write all the lines
       contents_a.each do |line|
+
+        # append signed line hash
+        line_h = OpenSSL::Digest::SHA1.digest(line)
+        signed_line_h = @key.private_encrypt(line_h)
+        signed_line_he = Base64.strict_encode64(signed_line_h)
+        line += "||#{signed_line_he}"
+
         io.puts line
       end
     end
@@ -195,8 +202,25 @@ class Server
 
       # search for item
       lines.each do |line|
+        line = line.chomp
         parts = line.split('||')
+        # find matching line
         if parts[0].upcase == id.upcase
+
+          # check integrity
+          signed_line_he = parts[3]
+          signed_line_h = Base64.decode64(signed_line_he)
+          line_h = @key.public_decrypt(signed_line_h)
+
+          # reconstruct line
+          l = parts[0,3].join('||')
+
+          # rehash
+          line_rehash = OpenSSL::Digest::SHA1.digest(l)
+
+          # check
+          return {response: 1, message: 'record corrupted'} if not line_h == line_rehash
+
           return {response: 0, message: 'record found', details: parts[1]}
         end
       end
@@ -214,10 +238,25 @@ class Server
 
       # search for item
       lines.each do |line|
+        line = line.chomp
         parts = line.split('||')
         if parts[0].upcase == id.upcase
-          ch = parts[2].chomp
-          return {response: 0, message: 'record found', correct: ch == hash}
+
+          # check integrity
+          signed_line_he = parts[3]
+          signed_line_h = Base64.decode64(signed_line_he)
+          line_h = @key.public_decrypt(signed_line_h)
+
+          # reconstruct line
+          l = parts[0,3].join('||')
+
+          # rehash
+          line_rehash = OpenSSL::Digest::SHA1.digest(l)
+
+          # check
+          return {response: 1, message: 'record corrupted'} if not line_h == line_rehash
+
+          return {response: 0, message: 'record found', correct: parts[2] == hash}
         end
       end
     end

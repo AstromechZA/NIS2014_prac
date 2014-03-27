@@ -179,11 +179,15 @@ class Client
       # return
       return details
     else
-      raise p['message']
+      return nil
     end
   end
 
-  def hash_check(id, hash)
+  def hash_check(id, details)
+    return hash_check_raw(id, OpenSSL::Digest::SHA1.digest("#{id}||#{details}"))
+  end
+
+  def hash_check_raw(id, hash)
     # encode the hash
     hash_e = Base64.strict_encode64(hash)
 
@@ -193,7 +197,7 @@ class Client
     if p['response'] == 0
       return p['correct']
     else
-      raise p['message']
+      return nil
     end
   end
 
@@ -203,20 +207,31 @@ end
 current_dir = File.dirname(__FILE__)
 
 cnf = YAML::load_file(File.join(current_dir, 'client.yml'))
-$log.info "Starting client with #{cnf}"
+puts "Starting client with #{cnf}"
 $log.level = Logger.const_get(cnf['log_level']) if cnf.has_key? 'log_level'
 
 c = Client.new(cnf['id'], File.join(current_dir, 'keyring'))
 c.authenticate(cnf['server'], cnf['port'])
 
+puts ''
+puts 'Uploading customers file'
 puts c.secure_upload(File.join(current_dir, 'customers.dat'))
 
+puts ''
+puts 'Getting data for ID007'
 d = c.get('ID007')
 puts d.inspect
 
-h = OpenSSL::Digest::SHA1.digest("ID007||#{d}")
-puts c.hash_check('ID007', h)
+puts ''
+puts 'Checking that the data matches remote data'
+puts c.hash_check('ID007', d)
 
+puts ''
+puts 'Getting an unknown record'
+puts c.get('ID004').inspect
+
+puts ''
+puts 'Closing'
 c.close()
 
 
