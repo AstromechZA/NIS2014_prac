@@ -49,10 +49,21 @@ module CryptoUtils
     return k, iv
   end
 
+  def writeAESPairToFile(f, k, i)
+    File.open(f, 'w') {|io| io.write("#{Base64.strict_encode64(k)}\n#{Base64.strict_encode64(i)}")}
+  end
+
+  def readAESPairFromFile(f)
+    lines = File.readlines(f)
+    return Base64.decode64(lines[0]), Base64.decode64(lines[1])
+  end
+
   module_function :load_key
   module_function :makeRSApayload
   module_function :checkRSApayloadSignature
   module_function :encryptAES
   module_function :decryptAES
   module_function :generateAESPair
+  module_function :writeAESPairToFile
+  module_function :readAESPairFromFile
 end

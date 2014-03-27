@@ -167,74 +167,72 @@ class Server
     socket.puts(secure_response)
   end
 
-  def set(client, id, document)
-    f = File.join(@data_dir, id)
-    m = /(ID)?(\d{3})/i.match(id)
-    if not m
-      return {response: 1, message: "Invalid id #{id}"}
-    else
-      contents = JSON.load(document)
+  def upload(client, lines)
+    f = File.join(@data_dir, 'customers.dat')
 
-      userd = {client: client[:id]}
-      userdt = JSON.dump(userd)
-      userdth = OpenSSL::Digest::SHA1.digest(userdt)
+    # load lines from json
+    contents_a = JSON.load(lines)
 
-      secure_userdt = @key.public_encrypt(userdt)
-      secure_userdth = @key.private_encrypt(userdth)
-
-      contents[:secure_userdt] = Base64.strict_encode64(secure_userdt)
-      contents[:secure_userdth]= Base64.strict_encode64(secure_userdth)
-
-      File.open(f, "w") { |io| io.write(JSON.dump(contents)) }
-
-      return {response: 0, message: "Stored #{m[2]}"}
+    # overwrite the file
+    File.open(f, 'w') do |io|
+      # write all the lines
+      contents_a.each do |line|
+        io.puts line
+      end
     end
+
+    # return response
+    return {response: 0, message: "Stored #{contents_a.length} lines"}
   end
 
   def get(client, id)
     # check if file exists
-    f = File.join(@data_dir, id)
+    f = File.join(@data_dir, 'customers.dat')
     if File.exists?(f)
-      #read in doc
-      fb = File.open(f, 'r')
-      contents = JSON.load(fb.read)
 
-      # decrypt userthangs
-      userdt = @key.private_decrypt(Base64.decode64(contents['secure_userdt']))
-      userdth = @key.public_decrypt(Base64.decode64(contents['secure_userdth']))
-      userdreh = OpenSSL::Digest::SHA1.digest(userdt)
+      # read lines in
+      lines = File.readlines(f)
 
-      return {response: 1, message: "ownership corrupted"} if userdth != OpenSSL::Digest::SHA1.digest(userdt)
-
-      userd = JSON.load(userdt)
-
-      return {response: 1, message: "permission denied"} if userd['client'] != client[:id]
-
-      contents.delete('secure_userdt')
-      contents.delete('secure_userdth')
-
-      return {response: 0, message: 'permission granted', document: JSON.dump(contents)}
+      # search for item
+      lines.each do |line|
+        parts = line.split('||')
+        if parts[0].upcase == id.upcase
+          return {response: 0, message: 'record found', details: parts[1]}
+        end
+      end
     end
-    return {response: 1, message: "unknown id #{id}"}
+    return {response: 1, message: "no data available"}
   end
 
-  def verify(client, id)
-    f = File.join(@data_dir, id)
+  def hash_check(client, id, hash)
+    # check if file exists
+    f = File.join(@data_dir, 'customers.dat')
     if File.exists?(f)
 
+      # read lines in
+      lines = File.readlines(f)
+
+      # search for item
+      lines.each do |line|
+        parts = line.split('||')
+        if parts[0].upcase == id.upcase
+          ch = parts[2].chomp
+          return {response: 0, message: 'record found', correct: ch == hash}
+        end
+      end
     end
-    return {response: 1, message: "unknown id #{id}"}
+    return {response: 1, message: "no data available"}
   end
 
   def perform(client, cmd)
     if cmd.include? 'action'
       case cmd['action']
-      when 'set'
-        return set(client, cmd['id'], cmd['text'])
+      when 'upload'
+        return upload(client, cmd['lines'])
       when 'get'
         return get(client, cmd['id'])
-      when 'verify'
-        return verify(client, cmd['id'])
+      when 'hash_check'
+        return hash_check(client, cmd['id'], cmd['hash'])
       else
         return {response: 1, message: "unknown action #{cmd['action']}"}
       end

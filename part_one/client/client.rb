@@ -123,60 +123,77 @@ class Client
     socket.puts(JSON.dump(payload))
   end
 
-  def set(id, text)
+  def secure_upload(file)
+    # array of secure lines
+    contents_a = []
 
-    contents = {}
+    # read the symmetric key in
+    aes_k, aes_iv = CryptoUtils::readAESPairFromFile(File.join(@keyring, 'file_key.aes'))
 
-    k,iv = CryptoUtils::generateAESPair
+    # for each line in the customers file
+    File.readlines(file).each do |line|
+      # split id and details
+      id, details = line.split('-', 2)
 
-    contents[:secure_doc] = Base64.strict_encode64(CryptoUtils::encryptAES(text, k, iv))
-    hashd = {hash: Base64.strict_encode64(OpenSSL::Digest::SHA1.digest(text))}
-    hashdt = JSON.dump(hashd)
+      # chomp newline char
+      details = details.chomp
 
-    contents[:secure_hash] = Base64.strict_encode64(@key.private_encrypt(hashdt))
+      # create a correct hash and encode it
+      hbit = "#{id}||#{details}"
+      hbit_h = OpenSSL::Digest::SHA1.digest(hbit)
+      hbit_he = Base64.strict_encode64(hbit_h)
 
-    keyd = {key: Base64.strict_encode64(k), iv: Base64.strict_encode64(iv)}
-    keydt = JSON.dump(keyd)
-    contents[:secure_key] = Base64.strict_encode64(@key.public_encrypt(keydt))
+      # encrypt the details with the symmetric key, and encode
+      secure_details = CryptoUtils::encryptAES(details, aes_k, aes_iv)
+      secure_details_e = Base64.strict_encode64(secure_details)
 
-    contentst = JSON.dump(contents)
+      # add the line to contents
+      contents_a << "#{id}||#{secure_details_e}||#{hbit_he}"
+    end
 
-    send_command(@socket, {action: 'set', id: id, text: contentst})
+    # encode as json for transfer
+    contents_aj = JSON.dump(contents_a)
+
+    # send it!
+    send_command(@socket, {action: 'upload', lines: contents_aj})
     p = receive_responce(@socket)
     return p['response'] == 0
   end
+
 
   def get(id)
     send_command(@socket, {action: 'get', id: id})
     p = receive_responce(@socket)
     if p['response'] == 0
 
-      document = JSON.load(p['document'])
+      # decode
+      secure_details_e = p['details']
+      secure_details = Base64.decode64(secure_details_e)
 
-      secure_key_dte = document['secure_key']
-      secure_key_dt = Base64.decode64(secure_key_dte)
-      secure_key_d = JSON.load(@key.private_decrypt(secure_key_dt))
+      # read aes key
+      aes_k, aes_iv = CryptoUtils::readAESPairFromFile(File.join(@keyring, 'file_key.aes'))
 
-      key = Base64.decode64(secure_key_d['key'])
-      iv = Base64.decode64(secure_key_d['iv'])
+      # decrypt
+      details = CryptoUtils::decryptAES(secure_details, aes_k, aes_iv)
 
-      secure_doc_dte = document['secure_doc']
-      secure_doc_dt = Base64.decode64(secure_doc_dte)
-      secure_doc_d = CryptoUtils::decryptAES(secure_doc_dt, key, iv)
-
-      secure_doc_d_rehash = OpenSSL::Digest::SHA1.digest(secure_doc_d)
-
-      secure_hash_dtee = document['secure_hash']
-      secure_hash_dte = Base64.decode64(secure_hash_dtee)
-      secure_hash_dt = @key.public_decrypt(secure_hash_dte)
-      secure_hash_d = JSON.load(secure_hash_dt)
-      secure_hash_v = Base64.decode64(secure_hash_d['hash'])
-
-      raise 'returned hash does not match hash of returned document!' if secure_hash_v != secure_doc_d_rehash
-
-      return secure_doc_d
+      # return
+      return details
     else
-      return nil
+      raise p['message']
+    end
+  end
+
+  def hash_check(id, hash)
+    # encode the hash
+    hash_e = Base64.strict_encode64(hash)
+
+    # send it
+    send_command(@socket, {action: 'hash_check', id: id, hash: hash_e})
+    p = receive_responce(@socket)
+    if p['response'] == 0
+      return p['correct']
+    else
+      raise p['message']
     end
   end
 
@@ -192,9 +209,13 @@ $log.level = Logger.const_get(cnf['log_level']) if cnf.has_key? 'log_level'
 c = Client.new(cnf['id'], File.join(current_dir, 'keyring'))
 c.authenticate(cnf['server'], cnf['port'])
 
-puts c.set('007', 'Bond,James,High Priority')
+puts c.secure_upload(File.join(current_dir, 'customers.dat'))
 
-puts c.get('007')
+d = c.get('ID007')
+puts d.inspect
+
+h = OpenSSL::Digest::SHA1.digest("ID007||#{d}")
+puts c.hash_check('ID007', h)
 
 c.close()
 
