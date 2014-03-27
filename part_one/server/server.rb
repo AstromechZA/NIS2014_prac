@@ -6,12 +6,20 @@ require 'base64'
 require 'logger'
 $: << File.join(File.dirname(__FILE__), '..')
 require 'crypto_utils'
+require 'optparse'
 
 $log = Logger.new(STDOUT)
 $log.level = Logger::INFO
 $log.formatter = proc do |severity, datetime, progname, msg|
    "[#{datetime.strftime('%F %T')} #{severity}] #{msg}\n"
 end
+
+optparse = OptionParser.new do|opts|
+  opts.on( '-d', '--debug', 'Output more information' ) do
+     $log.level = Logger::DEBUG
+   end
+end
+optparse.parse!
 
 class Server
 
@@ -24,6 +32,17 @@ class Server
 
   def key_exists?(file)
     File.exists?(File.join(@keyring_dir, file))
+  end
+
+  def socket_get(socket)
+    data = socket.gets
+    $log.debug "Received #{data.inspect}"
+    return data
+  end
+
+  def socket_put(socket, data)
+    socket.puts(data)
+    $log.debug "Sent #{data.inspect}"
   end
 
   def start(port)
@@ -67,7 +86,7 @@ class Server
 
   def receive_handshake(socket)
     $log.debug 'Waiting for handshake'
-    data = JSON.load(socket.gets)
+    data = JSON.load(socket_get(socket))
 
     payload = JSON.load(@key.private_decrypt(Base64.decode64(data['payload'])))
     client = {
@@ -101,12 +120,12 @@ class Server
       client[:key]
     )
 
-    socket.puts(JSON.dump(payload))
+    socket_put(socket, JSON.dump(payload))
   end
 
   def receive_confirmation(socket, client)
     $log.debug 'Waiting for confirmation and command'
-    data = JSON.load(socket.gets)
+    data = JSON.load(socket_get(socket))
 
     payload = CryptoUtils::checkRSApayloadSignature(data, @key, client[:key])
 
@@ -132,19 +151,19 @@ class Server
 
     secure_response = Base64.strict_encode64(ciphertext)
 
-    socket.puts(secure_response)
+    socket_put(socket, secure_response)
   end
 
   def receive_command(socket, client)
     $log.debug 'Waiting for command'
-    data = JSON.load(socket.gets)
+    data = socket_get(socket)
 
-    payload = CryptoUtils::checkRSApayloadSignature(data, @key, client[:key])
+    plaintext = CryptoUtils::decryptAES(Base64.decode64(data), client[:sessionkey], client[:sessioniv])
+
+    payload = JSON.load(plaintext)
 
     valid = (client[:snonce] + 1) == payload['snonce']
     raise 'nonce error' if not valid
-
-    plaintext = CryptoUtils::decryptAES(Base64.decode64(data['command']), client[:sessionkey], client[:sessioniv])
 
     client[:cnonce] = payload['cnonce']
 
@@ -164,7 +183,7 @@ class Server
 
     secure_response = Base64.strict_encode64(ciphertext)
 
-    socket.puts(secure_response)
+    socket_put(socket, secure_response)
   end
 
   def upload(client, lines)
@@ -286,7 +305,6 @@ current_dir = File.dirname(__FILE__)
 
 cnf = YAML::load_file(File.join(current_dir, 'server.yml'))
 $log.info "Starting server with #{cnf}"
-$log.level = Logger.const_get(cnf['log_level']) if cnf.has_key? 'log_level'
 
 keyring_dir = File.join(current_dir, 'keyring')
 data_dir = File.join(current_dir, 'data')

@@ -6,12 +6,21 @@ require 'base64'
 require 'logger'
 $: << File.join(File.dirname(__FILE__), '..')
 require 'crypto_utils'
+require 'optparse'
 
 $log = Logger.new(STDOUT)
 $log.level = Logger::INFO
 $log.formatter = proc do |severity, datetime, progname, msg|
    "[#{datetime.strftime('%F %T')} #{severity}] #{msg}\n"
 end
+
+optparse = OptionParser.new do|opts|
+  opts.on( '-d', '--debug', 'Output more information' ) do
+     $log.level = Logger::DEBUG
+   end
+end
+optparse.parse!
+
 
 class Client
   def initialize(id, keyring)
@@ -38,6 +47,18 @@ class Client
     receive_responce(@socket)
   end
 
+
+  def socket_get
+    data = @socket.gets
+    $log.debug "Received #{data.inspect}"
+    return data
+  end
+
+  def socket_put(data)
+    @socket.puts(data)
+    $log.debug "Sent #{data.inspect}"
+  end
+
   def close
     send_command(@socket, {action: 'quit'})
     $log.debug 'Closing socket'
@@ -53,14 +74,14 @@ class Client
     # construct payload with signed version
     payload = CryptoUtils::makeRSApayload({id: @id, cnonce: @last_cnonce}, @key, @server_key)
     # send to server
-    socket.puts(JSON.dump(payload))
+    socket_put(JSON.dump(payload))
   end
 
   # affirmation message
   # Server sends back incremented client nonce, server nonce, and a master key+iv
   def receive_affirmation(socket)
     $log.debug 'Waiting for affirmation'
-    data = JSON.load(socket.gets)
+    data = JSON.load(socket_get)
     # verify signature
     payload = CryptoUtils::checkRSApayloadSignature(data, @key, @server_key)
     # verify nonce
@@ -85,12 +106,12 @@ class Client
 
     payload[:check] = Base64.strict_encode64(ciphertext)
 
-    socket.puts(JSON.dump(payload))
+    socket_put(JSON.dump(payload))
   end
 
   def receive_responce(socket)
     $log.debug 'Waiting for response'
-    data = Base64.decode64(socket.gets)
+    data = Base64.decode64(socket_get)
 
     plaintext = CryptoUtils::decryptAES(data, @sessionkey, @sessioniv)
 
@@ -111,16 +132,16 @@ class Client
     $log.info "Sending command: #{command[:action]}"
     @last_cnonce = Random.rand(2**31)
 
-    payload = CryptoUtils::makeRSApayload({snonce: @last_snonce+1, cnonce: @last_cnonce}, @key, @server_key)
+    command[:snonce] = @last_snonce + 1
+    command[:cnonce] = @last_cnonce
 
-    as_txt = command.to_s
-    as_txt = JSON.dump(command) if command.is_a?(Hash)
+    command = JSON.dump(command)
 
-    ciphertext = CryptoUtils::encryptAES(as_txt, @sessionkey, @sessioniv)
+    ciphertext = CryptoUtils::encryptAES(command, @sessionkey, @sessioniv)
 
-    payload[:command] = Base64.strict_encode64(ciphertext)
+    payload = Base64.strict_encode64(ciphertext)
 
-    socket.puts(JSON.dump(payload))
+    socket_put(payload)
   end
 
   def secure_upload(file)
@@ -207,7 +228,6 @@ end
 current_dir = File.dirname(__FILE__)
 
 cnf = YAML::load_file(File.join(current_dir, 'client.yml'))
-$log.level = Logger.const_get(cnf['log_level']) if cnf.has_key? 'log_level'
 
 c = Client.new(cnf['id'], File.join(current_dir, 'keyring'))
 
