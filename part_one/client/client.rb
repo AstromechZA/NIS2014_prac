@@ -207,10 +207,11 @@ end
 current_dir = File.dirname(__FILE__)
 
 cnf = YAML::load_file(File.join(current_dir, 'client.yml'))
-puts "Starting client with #{cnf}"
 $log.level = Logger.const_get(cnf['log_level']) if cnf.has_key? 'log_level'
 
 c = Client.new(cnf['id'], File.join(current_dir, 'keyring'))
+
+puts 'Authenticating with server'
 c.authenticate(cnf['server'], cnf['port'])
 
 puts ''
@@ -223,8 +224,10 @@ d = c.get('ID007')
 puts d.inspect
 
 puts ''
-puts 'Checking that the data matches remote data'
+puts 'Checking that data matches remote data'
 puts c.hash_check('ID007', d)
+
+puts c.hash_check('ID002', 'Meier,Ben,Secondary Asset')
 
 puts ''
 puts 'Getting an unknown record'
